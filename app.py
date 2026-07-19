@@ -21,11 +21,6 @@ import logging
 from datetime import datetime
 
 import streamlit as st
-
-# ── Backend imports ──────────────────────────────────────────────────────────
-from chains import build_study_chain
-from rag_pipeline_builder import build_rag_pipeline
-
 # ── UI imports ───────────────────────────────────────────────────────────────
 from ui.styles import get_css
 from ui.components import (
@@ -35,17 +30,10 @@ from ui.components import (
     render_time_badge,
     section_label,
 )
-from ui.upload_section import render_upload_section
 from ui.sidebar_panel import render_sidebar
-from ui.tabs.summary_tab import render_summary_tab
-from ui.tabs.keypoints_tab import render_keypoints_tab
-from ui.tabs.quiz_tab import render_quiz_tab
-from ui.tabs.flashcards_tab import render_flashcards_tab
-from ui.tabs.chat_tab import render_chat_tab
-from ui.tabs.exam_tab import render_exam_tab
-from mindmap_renderer import render_mindmap_tab
 
 logger = logging.getLogger(__name__)
+t_start = time.time()
 
 # ===========================================================================
 # ── Page Configuration (must be the very first Streamlit call) ─────────────
@@ -140,6 +128,7 @@ current_page = st.session_state.get("current_page", "dashboard")
 
 def _run_rag_with_progress(doc_text: str) -> bool:
     """Build RAG pipeline with a 4-stage animated progress UI. Returns success."""
+    from rag_pipeline_builder import build_rag_pipeline
     progress_ph = st.empty()
     status_ph   = st.empty()
 
@@ -224,6 +213,7 @@ def _run_study_generation() -> None:
         time.sleep(0.3)
 
         t0 = time.time()
+        from chains import build_study_chain
         chain = build_study_chain()
 
         _update_stage(30, "✍️ Generating study material…")
@@ -264,6 +254,7 @@ def _run_study_generation() -> None:
 
 if current_page == "dashboard":
     st.markdown("<h2 class='text-section'>Dashboard</h2>", unsafe_allow_html=True)
+    from ui.upload_section import render_upload_section
     document, file_changed = render_upload_section()
 
     if file_changed and st.session_state.get("document_text"):
@@ -296,6 +287,7 @@ if current_page == "dashboard":
         """, unsafe_allow_html=True)
 
 elif current_page == "chat":
+    from ui.tabs.chat_tab import render_chat_tab
     render_chat_tab()
 
 elif current_page == "settings":
@@ -313,12 +305,14 @@ elif current_page == "settings":
 
     st.markdown("<h3 class='text-card-title' style='margin-top:32px;'>Upload Another Document</h3>", unsafe_allow_html=True)
     st.markdown("<p class='text-body'>Replace the current document with a new one.</p>", unsafe_allow_html=True)
+    from ui.upload_section import render_upload_section
     document, file_changed = render_upload_section(force_upload=True)
     if file_changed and st.session_state.get("document_text"):
         progress_ph = st.empty()
         prog_bar    = progress_ph.progress(0)
         status_ph   = st.empty()
         try:
+            from rag_pipeline_builder import build_rag_pipeline
             build_rag_pipeline(st.session_state.document_text, prog_bar, status_ph)
             prog_bar.progress(100)
             status_ph.markdown(
@@ -368,6 +362,7 @@ elif current_page == "study":
         if generate_clicked:
             _run_study_generation()
     else:
+        from ui.tabs.summary_tab import render_summary_tab
         study_out = st.session_state.get("study_output")
         render_summary_tab(study_out)
 
@@ -376,6 +371,7 @@ elif current_page == "key_points":
     if not st.session_state.get("study_output"):
         st.warning("Generate Study Material first on the Study Notes page.")
     else:
+        from ui.tabs.keypoints_tab import render_keypoints_tab
         render_keypoints_tab(st.session_state.study_output)
 
 elif current_page == "flashcards":
@@ -383,6 +379,7 @@ elif current_page == "flashcards":
     if not st.session_state.get("study_output"):
         st.warning("Generate Study Material first on the Study Notes page.")
     else:
+        from ui.tabs.flashcards_tab import render_flashcards_tab
         render_flashcards_tab(st.session_state.study_output)
 
 elif current_page == "quiz":
@@ -390,6 +387,7 @@ elif current_page == "quiz":
     if not st.session_state.get("study_output"):
         st.warning("Generate Study Material first on the Study Notes page.")
     else:
+        from ui.tabs.quiz_tab import render_quiz_tab
         render_quiz_tab(st.session_state.study_output)
 
 elif current_page == "exam":
@@ -397,9 +395,11 @@ elif current_page == "exam":
         st.markdown("<h2 class='text-section'>🎓 Bloom's Taxonomy Exam Generator</h2>", unsafe_allow_html=True)
         st.warning("Generate Study Material first on the Study Notes page.")
     else:
+        from ui.tabs.exam_tab import render_exam_tab
         render_exam_tab(st.session_state.study_output)
 
 elif current_page == "mind_map":
+    from mindmap_renderer import render_mindmap_tab
     render_mindmap_tab()
 
 
@@ -489,3 +489,5 @@ Generated by Smart Study Assistant
         mime="text/plain",
         use_container_width=True,
     )
+
+logger.info("Page render completed. Current page: %s, time elapsed: %.3f seconds", current_page, time.time() - t_start)

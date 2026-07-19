@@ -32,23 +32,14 @@ def _clean_mermaid_output(raw_text: str) -> str:
         
     return cleaned.strip()
 
-def generate_mindmap() -> str:
-    """
-    Generates Mermaid code based on the cached summary.
-    Throws an exception if the summary is not available.
-    """
-    study_output = st.session_state.get("study_output")
-    if not study_output or "summary" not in study_output:
-        raise ValueError("No summary found. Please generate Study Materials first.")
-        
-    summary_text = study_output["summary"]
-    
+@st.cache_data
+def _generate_mindmap_code(summary_text: str, inference_mode: str) -> str:
     llm = get_model()
     
     # Build a simple chain
     chain = mindmap_prompt | llm
     
-    logger.info("Invoking mind map generation...")
+    logger.info("Invoking mind map generation LLM call...")
     # Using the retry logic from config to handle 429 errors gracefully
     raw_response = invoke_with_retry(chain, {"summary": summary_text})
     
@@ -63,5 +54,20 @@ def generate_mindmap() -> str:
     if not cleaned_code:
         raise ValueError("Failed to generate valid Mermaid code.")
         
+    return cleaned_code
+
+def generate_mindmap() -> str:
+    """
+    Generates Mermaid code based on the cached summary.
+    Throws an exception if the summary is not available.
+    """
+    study_output = st.session_state.get("study_output")
+    if not study_output or "summary" not in study_output:
+        raise ValueError("No summary found. Please generate Study Materials first.")
+        
+    summary_text = study_output["summary"]
+    inference_mode = st.session_state.get("inference_mode", "Local Gemma")
+    
+    cleaned_code = _generate_mindmap_code(summary_text, inference_mode)
     st.session_state.mermaid_code = cleaned_code
     return cleaned_code

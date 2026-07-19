@@ -36,6 +36,8 @@ logger = logging.getLogger(__name__)
 
 _EMBEDDING_MODEL_ID: str = "sentence-transformers/all-MiniLM-L6-v2"
 
+import streamlit as st
+
 # ---------------------------------------------------------------------------
 # Singleton state — module-level, survives Streamlit reruns
 # ---------------------------------------------------------------------------
@@ -43,6 +45,7 @@ _EMBEDDING_MODEL_ID: str = "sentence-transformers/all-MiniLM-L6-v2"
 _embeddings_instance: Optional[HuggingFaceEmbeddings] = None
 
 
+@st.cache_resource
 def get_embeddings() -> HuggingFaceEmbeddings:
     """
     Return the singleton HuggingFaceEmbeddings instance.

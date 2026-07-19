@@ -262,7 +262,7 @@ def render_mindmap_tab() -> None:
         mermaid_code_escaped=mermaid_code_escaped
     )
     
-    # Render with a height of 600px
+    # Render with a height of 750px (~75vh)
     st.markdown("<div class='glass-card' style='padding: 0;'>", unsafe_allow_html=True)
-    components.html(html_content, height=650, scrolling=False)
+    components.html(html_content, height=750, scrolling=False)
     st.markdown("</div>", unsafe_allow_html=True)

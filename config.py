@@ -25,9 +25,6 @@ except ImportError:
     pass
 
 import streamlit as st
-import torch
-from langchain_huggingface import ChatHuggingFace, HuggingFacePipeline
-from langchain_groq import ChatGroq
 from tenacity import retry, wait_exponential, stop_after_attempt, retry_if_exception_type
 
 # ---------------------------------------------------------------------------
@@ -48,10 +45,6 @@ PIPELINE_KWARGS: dict = {
     "max_new_tokens": 512,
     "do_sample": False,
     "return_full_text": False,
-}
-
-MODEL_KWARGS: dict = {
-    "torch_dtype": torch.float32,
 }
 
 # Task-specific generation settings (strictly matched to limits)
@@ -83,11 +76,15 @@ _groq_instances: dict = {} # cache by parameters
 def _get_local_pipeline() -> HuggingFacePipeline:
     global _local_llm_instance
     if _local_llm_instance is None:
+        import torch
+        from langchain_huggingface import HuggingFacePipeline
         logger.info("Loading Local Gemma from HuggingFace Hub: %s", LOCAL_MODEL_ID)
         _local_llm_instance = HuggingFacePipeline.from_model_id(
             model_id=LOCAL_MODEL_ID,
             task="text-generation",
-            model_kwargs=MODEL_KWARGS,
+            model_kwargs={
+                "torch_dtype": torch.float32,
+            },
             pipeline_kwargs=PIPELINE_KWARGS.copy(),
         )
     return _local_llm_instance
@@ -96,6 +93,7 @@ def _get_local_pipeline() -> HuggingFacePipeline:
 def _get_local_chat_model() -> ChatHuggingFace:
     global _local_chat_model_instance
     if _local_chat_model_instance is None:
+        from langchain_huggingface import ChatHuggingFace
         logger.info("Wrapping Local LLM in ChatHuggingFace.")
         _local_chat_model_instance = ChatHuggingFace(llm=_get_local_pipeline())
     return _local_chat_model_instance
@@ -103,6 +101,7 @@ def _get_local_chat_model() -> ChatHuggingFace:
 
 def _get_groq_chat_model(streaming: bool = False) -> ChatGroq:
     """Gets or creates a Groq model instance, prompting for API key if missing."""
+    from langchain_groq import ChatGroq
     api_key = os.environ.get("GROQ_API_KEY", "")
     
     cache_key = f"groq_{streaming}"
