@@ -126,7 +126,6 @@ def render_navbar() -> None:
     with bcol3:
         if st.button("⚙", key="settings_nav_btn", help="Settings"):
             st.session_state.current_page = "settings"
-            st.rerun()
 
 
 # ---------------------------------------------------------------------------
@@ -150,11 +149,9 @@ def render_hero() -> None:
         with btn1:
             if st.button("Upload Document", type="primary", use_container_width=True, key="hero_upload"):
                 st.session_state.current_page = "dashboard"
-                st.rerun()
         with btn2:
             if st.button("Start AI Chat", type="secondary", use_container_width=True, key="hero_chat"):
                 st.session_state.current_page = "chat"
-                st.rerun()
 
 
 # ---------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 """
-app.py — Smart Study Assistant (Premium Edition v3)
+app.py — Smart Study Assistant (Premium Edition v4)
 ====================================================
 Entry point. Responsibilities:
   1. Inject global CSS (ui/styles.py)
@@ -7,11 +7,13 @@ Entry point. Responsibilities:
   3. Top Navigation & Routing
   4. Core Workspace (Upload + Output Panel)
 
-v3 improvements:
+v4 architecture improvements:
+  - State-machine upload: file_changed → set building → rerun → build pipeline → rerun
+  - Processing overlay blocks page interaction during indexing
   - All session state keys pre-initialized (prevents KeyError)
-  - 4-stage animated progress for study material generation
-  - Theme initialized before CSS injection
-  - Dashboard hides upload correctly after doc load
+  - Embedding model loads exactly once via cached singleton
+  - No unnecessary reruns from identical session_state writes
+  - Consolidated pipeline build path (no duplicate build_rag_pipeline calls)
 """
 
 from __future__ import annotations
@@ -71,22 +73,26 @@ def _init_session_state() -> None:
         "reading_level":      "",
         "ocr_status":         "Not Used",
         # RAG pipeline
+        "parent_docs":        None,
         "doc_chunks":         None,
         "doc_embeddings":     None,
         "rag_vectorstore":    None,
+        "rag_bm25":           None,
         "rag_retriever":      None,
         "rag_chain":          None,
         "embedding_status":   "none",
         "chunk_count":        0,
         # Chat
         "chat_history":       [],
-        "chat_thinking":      False,
-        "pending_chat_answer": None,
-        "rag_question_input": "",
+        "chat_cache":         {},
+        "chat_generating":    False,
+        "pending_chat_question": "",
         # Study output
         "study_output":       None,
         "processing_times":   {},
         "total_process_time": 0,
+        "summary_cache":      {},
+        "summary_lang":       "English",
         # Flashcards
         "fc_idx":             0,
         "fc_order":           [],
@@ -100,6 +106,11 @@ def _init_session_state() -> None:
         "exam_questions":     {},
         # Inference
         "inference_mode":     "Local Gemma",
+        # Presentation Studio
+        "presentation_source":  "Paste Text",
+        "presentation_outline": None,
+        "presentation_file":    None,
+        "presentation_cache":   {},
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -123,50 +134,53 @@ render_navbar()
 current_page = st.session_state.get("current_page", "dashboard")
 
 # ===========================================================================
-# ── Helper: 4-Stage Progress Indicator ─────────────────────────────────────
+# ── Processing Overlay (blocks interaction during indexing) ────────────────
 # ===========================================================================
 
-def _run_rag_with_progress(doc_text: str) -> bool:
-    """Build RAG pipeline with a 4-stage animated progress UI. Returns success."""
+if st.session_state.get("embedding_status") == "building":
+    st.markdown("""
+    <div style="
+        background: rgba(0,0,0,0.7);
+        border: 1px solid rgba(251,191,36,0.3);
+        border-radius: var(--radius-xl);
+        padding: 40px 32px;
+        text-align: center;
+        margin-bottom: 24px;
+        backdrop-filter: blur(8px);
+    ">
+        <div style="font-size:2.5rem;margin-bottom:16px;">⏳</div>
+        <div style="font-size:20px;font-weight:700;color:#FBBF24;margin-bottom:8px;">
+            Processing Your Document
+        </div>
+        <div style="font-size:14px;color:var(--text-secondary);max-width:420px;margin:0 auto;line-height:1.65;">
+            Building embeddings, FAISS index, and retriever. Please wait until indexing is complete.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Run the pipeline on this rerun
     from rag_pipeline_builder import build_rag_pipeline
     progress_ph = st.empty()
     status_ph   = st.empty()
-
-    stages = [
-        (10, "⚙️  Preparing document…"),
-        (40, "🔍  Chunking & embedding…"),
-        (80, "🗄️  Building vector store…"),
-        (100, "✅  Document ready!"),
-    ]
-
+    prog_bar    = progress_ph.progress(0)
     try:
-        prog_bar = progress_ph.progress(0)
-        for pct, msg in stages[:-1]:
-            status_ph.markdown(
-                f'<p style="color:var(--text-secondary);font-size:13px;font-weight:500;">{msg}</p>',
-                unsafe_allow_html=True,
-            )
-            build_rag_pipeline(st.session_state.document_text, prog_bar, st.empty())
-            prog_bar.progress(pct)
-            break  # build_rag_pipeline handles its own progress
-
-        # Let it finish
-        prog_bar.progress(100)
-        status_ph.markdown(
-            '<p style="color:var(--success);font-size:13px;font-weight:600;">✅ Document indexed and ready!</p>',
-            unsafe_allow_html=True,
-        )
-        time.sleep(0.8)
-        return True
+        build_rag_pipeline(st.session_state.document_text, prog_bar, status_ph)
+        time.sleep(0.3)
     except Exception as exc:
-        progress_ph.empty()
-        status_ph.empty()
+        st.session_state.embedding_status = "none"
         st.error(f"❌ Indexing failed: {exc}")
-        return False
+        logger.exception("RAG pipeline build failed.")
     finally:
         progress_ph.empty()
         status_ph.empty()
 
+    # If pipeline completed successfully, rerun to show the ready state
+    if st.session_state.get("embedding_status") == "ready":
+        st.rerun()
+
+# ===========================================================================
+# ── Study Generation Helper ────────────────────────────────────────────────
+# ===========================================================================
 
 def _run_study_generation() -> None:
     """Run study material generation with a 4-stage animated progress display."""
@@ -224,6 +238,8 @@ def _run_study_generation() -> None:
             time.sleep(0.3)
 
             st.session_state.study_output       = out
+            st.session_state.summary_cache      = {"English": out.get("summary", "")}
+            st.session_state.summary_lang       = "English"
             st.session_state.total_process_time = round(time.time() - t0, 3)
             st.session_state.quiz_submitted      = {}
             st.session_state.quiz_revealed       = {}
@@ -252,155 +268,140 @@ def _run_study_generation() -> None:
 # ── Routing ─────────────────────────────────────────────────────────────────
 # ===========================================================================
 
-if current_page == "dashboard":
-    st.markdown("<h2 class='text-section'>Dashboard</h2>", unsafe_allow_html=True)
-    from ui.upload_section import render_upload_section
-    document, file_changed = render_upload_section()
+# Skip page rendering if we're in the processing overlay
+if st.session_state.get("embedding_status") != "building":
 
-    if file_changed and st.session_state.get("document_text"):
-        success = _run_rag_with_progress(st.session_state.document_text)
-        if success:
+    if current_page == "dashboard":
+        st.markdown("<h2 class='text-section'>Dashboard</h2>", unsafe_allow_html=True)
+        from ui.upload_section import render_upload_section
+        document, file_changed = render_upload_section()
+
+        if file_changed and st.session_state.get("document_text"):
+            # Trigger the state-machine: set building and rerun
+            # The processing overlay at the top will handle the actual build
+            st.session_state.embedding_status = "building"
             st.rerun()
 
-    if st.session_state.get("embedding_status") == "ready":
-        # Show a clean "ready" banner below the document card
-        st.markdown("""
-        <div style="
-            margin-top: 16px;
-            background: rgba(34,197,94,0.08);
-            border: 1px solid rgba(34,197,94,0.25);
-            border-radius: var(--radius-lg);
-            padding: 14px 20px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            animation: fadeInUp 0.4s ease;
-        ">
-            <span style="font-size:1.3rem;">✅</span>
-            <div>
-                <div style="font-size:14px;font-weight:700;color:#4ade80;">Document Ready</div>
-                <div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">
-                    Choose a feature from the sidebar to start studying.
+        if st.session_state.get("embedding_status") == "ready":
+            # Show a clean "ready" banner below the document card
+            st.markdown("""
+            <div style="
+                margin-top: 16px;
+                background: rgba(34,197,94,0.08);
+                border: 1px solid rgba(34,197,94,0.25);
+                border-radius: var(--radius-lg);
+                padding: 14px 20px;
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                animation: fadeInUp 0.4s ease;
+            ">
+                <span style="font-size:1.3rem;">✅</span>
+                <div>
+                    <div style="font-size:14px;font-weight:700;color:#4ade80;">Document Ready</div>
+                    <div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">
+                        Choose a feature from the sidebar to start studying.
+                    </div>
                 </div>
             </div>
-        </div>
-        """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
 
-elif current_page == "chat":
-    from ui.tabs.chat_tab import render_chat_tab
-    render_chat_tab()
+    elif current_page == "chat":
+        from ui.tabs.chat_tab import render_chat_tab
+        render_chat_tab()
 
-elif current_page == "settings":
-    st.markdown("<h2 class='text-section'>Settings</h2>", unsafe_allow_html=True)
-    st.markdown("<p class='text-body'>Configure your AI and application preferences.</p>", unsafe_allow_html=True)
+    elif current_page == "settings":
+        st.markdown("<h2 class='text-section'>Settings</h2>", unsafe_allow_html=True)
+        st.markdown("<p class='text-body'>Configure your AI and application preferences.</p>", unsafe_allow_html=True)
 
-    st.markdown("<h3 class='text-card-title' style='margin-top:24px;'>Inference Mode</h3>", unsafe_allow_html=True)
-    mode = st.radio(
-        "Select Model",
-        ["Local Gemma", "Groq API"],
-        index=0 if st.session_state.get("inference_mode", "Local Gemma") == "Local Gemma" else 1,
-        label_visibility="collapsed"
-    )
-    st.session_state.inference_mode = mode
+        st.markdown("<h3 class='text-card-title' style='margin-top:24px;'>Inference Mode</h3>", unsafe_allow_html=True)
+        mode = st.radio(
+            "Select Model",
+            ["Local Gemma", "Groq API"],
+            index=0 if st.session_state.get("inference_mode", "Local Gemma") == "Local Gemma" else 1,
+            label_visibility="collapsed"
+        )
+        # Only write if changed to avoid unnecessary reruns
+        if st.session_state.inference_mode != mode:
+            st.session_state.inference_mode = mode
 
-    st.markdown("<h3 class='text-card-title' style='margin-top:32px;'>Upload Another Document</h3>", unsafe_allow_html=True)
-    st.markdown("<p class='text-body'>Replace the current document with a new one.</p>", unsafe_allow_html=True)
-    from ui.upload_section import render_upload_section
-    document, file_changed = render_upload_section(force_upload=True)
-    if file_changed and st.session_state.get("document_text"):
-        progress_ph = st.empty()
-        prog_bar    = progress_ph.progress(0)
-        status_ph   = st.empty()
-        try:
-            from rag_pipeline_builder import build_rag_pipeline
-            build_rag_pipeline(st.session_state.document_text, prog_bar, status_ph)
-            prog_bar.progress(100)
-            status_ph.markdown(
-                '<p style="color:var(--success);font-size:13px;font-weight:600;">✅ Document Ready!</p>',
-                unsafe_allow_html=True,
-            )
-            time.sleep(0.8)
-            st.session_state.current_page = "dashboard"
-            st.rerun()
-        except Exception as exc:
-            st.error(f"❌ RAG Indexing failed: {exc}")
-        finally:
-            progress_ph.empty()
-            status_ph.empty()
-
-elif current_page == "study":
-    st.markdown("<h2 class='text-section'>Study Notes</h2>", unsafe_allow_html=True)
-    if not st.session_state.get("study_output"):
-        st.markdown("""
-        <div style="
-            background: var(--glass-bg);
-            border: 1px solid var(--glass-border);
-            border-radius: var(--radius-xl);
-            padding: 32px;
-            text-align: center;
-            margin-bottom: 24px;
-            backdrop-filter: blur(12px);
-        ">
-            <div style="font-size:2.5rem;margin-bottom:12px;">📚</div>
-            <div style="font-size:18px;font-weight:700;color:var(--text-primary);margin-bottom:6px;">
-                No Study Material Generated
+    elif current_page == "study":
+        st.markdown("<h2 class='text-section'>Study Notes</h2>", unsafe_allow_html=True)
+        if not st.session_state.get("study_output"):
+            st.markdown("""
+            <div style="
+                background: var(--glass-bg);
+                border: 1px solid var(--glass-border);
+                border-radius: var(--radius-xl);
+                padding: 32px;
+                text-align: center;
+                margin-bottom: 24px;
+                backdrop-filter: blur(12px);
+            ">
+                <div style="font-size:2.5rem;margin-bottom:12px;">📚</div>
+                <div style="font-size:18px;font-weight:700;color:var(--text-primary);margin-bottom:6px;">
+                    No Study Material Generated
+                </div>
+                <div style="font-size:14px;color:var(--text-secondary);max-width:400px;margin:0 auto 20px;">
+                    Click the button below to generate a complete study package from your uploaded document.
+                </div>
             </div>
-            <div style="font-size:14px;color:var(--text-secondary);max-width:400px;margin:0 auto 20px;">
-                Click the button below to generate a complete study package from your uploaded document.
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
 
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            generate_clicked = st.button(
-                "🚀 Generate Study Material",
-                type="primary",
-                use_container_width=True,
-            )
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                generate_clicked = st.button(
+                    "🚀 Generate Study Material",
+                    type="primary",
+                    use_container_width=True,
+                )
 
-        if generate_clicked:
-            _run_study_generation()
-    else:
-        from ui.tabs.summary_tab import render_summary_tab
-        study_out = st.session_state.get("study_output")
-        render_summary_tab(study_out)
+            if generate_clicked:
+                _run_study_generation()
+        else:
+            from ui.tabs.summary_tab import render_summary_tab
+            study_out = st.session_state.get("study_output")
+            render_summary_tab(study_out)
 
-elif current_page == "key_points":
-    st.markdown("<h2 class='text-section'>Key Points</h2>", unsafe_allow_html=True)
-    if not st.session_state.get("study_output"):
-        st.warning("Generate Study Material first on the Study Notes page.")
-    else:
-        from ui.tabs.keypoints_tab import render_keypoints_tab
-        render_keypoints_tab(st.session_state.study_output)
+    elif current_page == "key_points":
+        st.markdown("<h2 class='text-section'>Key Points</h2>", unsafe_allow_html=True)
+        if not st.session_state.get("study_output"):
+            st.warning("Generate Study Material first on the Study Notes page.")
+        else:
+            from ui.tabs.keypoints_tab import render_keypoints_tab
+            render_keypoints_tab(st.session_state.study_output)
 
-elif current_page == "flashcards":
-    st.markdown("<h2 class='text-section'>Flashcards</h2>", unsafe_allow_html=True)
-    if not st.session_state.get("study_output"):
-        st.warning("Generate Study Material first on the Study Notes page.")
-    else:
-        from ui.tabs.flashcards_tab import render_flashcards_tab
-        render_flashcards_tab(st.session_state.study_output)
+    elif current_page == "flashcards":
+        st.markdown("<h2 class='text-section'>Flashcards</h2>", unsafe_allow_html=True)
+        if not st.session_state.get("study_output"):
+            st.warning("Generate Study Material first on the Study Notes page.")
+        else:
+            from ui.tabs.flashcards_tab import render_flashcards_tab
+            render_flashcards_tab(st.session_state.study_output)
 
-elif current_page == "quiz":
-    st.markdown("<h2 class='text-section'>Quiz</h2>", unsafe_allow_html=True)
-    if not st.session_state.get("study_output"):
-        st.warning("Generate Study Material first on the Study Notes page.")
-    else:
-        from ui.tabs.quiz_tab import render_quiz_tab
-        render_quiz_tab(st.session_state.study_output)
+    elif current_page == "quiz":
+        st.markdown("<h2 class='text-section'>Quiz</h2>", unsafe_allow_html=True)
+        if not st.session_state.get("study_output"):
+            st.warning("Generate Study Material first on the Study Notes page.")
+        else:
+            from ui.tabs.quiz_tab import render_quiz_tab
+            render_quiz_tab(st.session_state.study_output)
 
-elif current_page == "exam":
-    if not st.session_state.get("study_output"):
-        st.markdown("<h2 class='text-section'>🎓 Bloom's Taxonomy Exam Generator</h2>", unsafe_allow_html=True)
-        st.warning("Generate Study Material first on the Study Notes page.")
-    else:
-        from ui.tabs.exam_tab import render_exam_tab
-        render_exam_tab(st.session_state.study_output)
+    elif current_page == "exam":
+        if not st.session_state.get("study_output"):
+            st.markdown("<h2 class='text-section'>🎓 Bloom's Taxonomy Exam Generator</h2>", unsafe_allow_html=True)
+            st.warning("Generate Study Material first on the Study Notes page.")
+        else:
+            from ui.tabs.exam_tab import render_exam_tab
+            render_exam_tab(st.session_state.study_output)
 
-elif current_page == "mind_map":
-    from mindmap_renderer import render_mindmap_tab
-    render_mindmap_tab()
+    elif current_page == "mind_map":
+        from mindmap_renderer import render_mindmap_tab
+        render_mindmap_tab()
+
+    elif current_page == "presentation":
+        from ui.tabs.presentation_tab import render_presentation_tab
+        render_presentation_tab()
 
 
 # ===========================================================================

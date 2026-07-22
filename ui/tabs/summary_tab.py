@@ -152,17 +152,19 @@ function ttsPlay() {
         return;
     }
     window.speechSynthesis.cancel();
-    utterance = new SpeechSynthesisUtterance(summaryText);
-    const speed    = parseFloat(document.getElementById('tts-speed').value);
-    const voiceIdx = document.getElementById('tts-voice').value;
-    utterance.rate  = speed;
-    if (voiceIdx !== '' && voices[parseInt(voiceIdx)]) {
-        utterance.voice = voices[parseInt(voiceIdx)];
-    }
-    utterance.onstart = () => { setStatus('▶ Playing…'); showWave(true); setBtns(true); };
-    utterance.onend   = () => { setStatus('✅ Finished'); showWave(false); setBtns(false); paused = false; document.getElementById('btn-pause').textContent = '⏸ Pause'; };
-    utterance.onerror = (e) => { setStatus('❌ Error: ' + e.error); showWave(false); setBtns(false); };
-    window.speechSynthesis.speak(utterance);
+    setTimeout(() => {
+        utterance = new SpeechSynthesisUtterance(summaryText);
+        const speed    = parseFloat(document.getElementById('tts-speed').value);
+        const voiceIdx = document.getElementById('tts-voice').value;
+        utterance.rate  = speed;
+        if (voiceIdx !== '' && voices[parseInt(voiceIdx)]) {
+            utterance.voice = voices[parseInt(voiceIdx)];
+        }
+        utterance.onstart = () => { setStatus('▶ Playing…'); showWave(true); setBtns(true); };
+        utterance.onend   = () => { setStatus('✅ Finished'); showWave(false); setBtns(false); paused = false; document.getElementById('btn-pause').textContent = '⏸ Pause'; };
+        utterance.onerror = (e) => { setStatus('❌ Error: ' + e.error); showWave(false); setBtns(false); };
+        window.speechSynthesis.speak(utterance);
+    }, 50);
 }
 
 function ttsPause() {
@@ -191,12 +193,65 @@ function ttsStop() {
     setBtns(false);
     document.getElementById('btn-pause').textContent = '⏸ Pause';
 }
+
+// Add change event listeners to speed and voice options to immediately update when changed while playing
+document.getElementById('tts-speed').addEventListener('change', () => {
+    if (window.speechSynthesis && (window.speechSynthesis.speaking || paused)) {
+        paused = false;
+        ttsPlay();
+    }
+});
+document.getElementById('tts-voice').addEventListener('change', () => {
+    if (window.speechSynthesis && (window.speechSynthesis.speaking || paused)) {
+        paused = false;
+        ttsPlay();
+    }
+});
 </script>
 """
 
 
+def translate_summary(text: str, target_language: str) -> str:
+    """Translate summary text to target language using active LLM."""
+    from config import task_token_budget, invoke_with_retry
+    from langchain_core.output_parsers import StrOutputParser
+    from langchain_core.prompts import PromptTemplate
+
+    quality_instructions = ""
+    if target_language == "Hindi":
+        quality_instructions = "Ensure the Hindi translation is natural and formal. Do not mix English unnecessarily. Keep technical terms accurate."
+    elif target_language == "Marathi":
+        quality_instructions = "Ensure the Marathi translation uses standard Marathi suitable for college students. Do not mix English unnecessarily. Keep technical terms accurate."
+
+    prompt = PromptTemplate.from_template(
+        "You are a professional translator. Translate the following English text to {language}.\n\n"
+        "CRITICAL TRANSLATION RULES:\n"
+        "1. Translate ONLY. Do NOT summarize, shorten, or expand the content.\n"
+        "2. Do NOT add any introductory, explanatory, or concluding text. Output ONLY the translated content.\n"
+        "3. Preserve all formatting, headings, bullet points, numbering, bolding, and Markdown structure exactly as in the source text.\n"
+        "4. Keep technical terms accurate. Do NOT mix English words unnecessarily.\n"
+        "{quality_instructions}\n\n"
+        "English Text to Translate:\n"
+        "{text}\n\n"
+        "Translation:"
+    )
+
+    parser = StrOutputParser()
+    with task_token_budget("study_material") as model:
+        chain = prompt | model | parser
+        translated = invoke_with_retry(
+            chain,
+            {
+                "language": target_language,
+                "quality_instructions": quality_instructions,
+                "text": text
+            }
+        )
+    return translated.strip()
+
+
 def render_summary_tab(study_output: dict | None) -> None:
-    """Render the Summary tab content with TTS audio player."""
+    """Render the Summary tab content with TTS audio player and Translation dropdown."""
     if not study_output:
         render_empty_state(
             "📄",
@@ -208,6 +263,44 @@ def render_summary_tab(study_output: dict | None) -> None:
     summary     = study_output.get("summary", "")
     proc_times  = st.session_state.get("processing_times", {})
     t           = proc_times.get("Study Material", proc_times.get("Summary", None))
+
+    # Initialize translation cache
+    if "summary_cache" not in st.session_state or not st.session_state.summary_cache:
+        st.session_state.summary_cache = {"English": summary}
+    elif st.session_state.summary_cache.get("English") != summary:
+        st.session_state.summary_cache = {"English": summary}
+
+    # ── Translate Summary dropdown ───────────────────────────────────────────
+    st.markdown("""
+    <div style="display:flex; align-items:center; gap:8px; font-weight:700; color:var(--text-primary); font-size:14.5px; margin-bottom:6px; font-family:var(--font-display);">
+        <span>🌐</span> Translate Summary
+    </div>
+    """, unsafe_allow_html=True)
+
+    lang_options = ["English", "Hindi", "Marathi"]
+    if "summary_lang" not in st.session_state:
+        st.session_state.summary_lang = "English"
+
+    selected_lang = st.selectbox(
+        "Translate Summary Language",
+        options=lang_options,
+        index=lang_options.index(st.session_state.summary_lang),
+        label_visibility="collapsed",
+        key="summary_lang_select"
+    )
+    st.session_state.summary_lang = selected_lang
+
+    # Get translation
+    if selected_lang in st.session_state.summary_cache:
+        active_summary = st.session_state.summary_cache[selected_lang]
+    else:
+        with st.spinner("Translating Summary..."):
+            try:
+                active_summary = translate_summary(summary, selected_lang)
+                st.session_state.summary_cache[selected_lang] = active_summary
+            except Exception as e:
+                st.error(f"Translation failed: {e}")
+                active_summary = summary
 
     # ── Header row ──────────────────────────────────────────────────────────
     h_col, t_col = st.columns([3, 1])
@@ -223,12 +316,12 @@ def render_summary_tab(study_output: dict | None) -> None:
     # ── Glass card with summary ──────────────────────────────────────────────
     st.markdown(f"""
     <div class="glass-card glass-card-accent" style="margin-bottom:18px;">
-      <div class="summary-content">{summary.replace(chr(10), "<br>")}</div>
+      <div class="summary-content">{active_summary.replace(chr(10), "<br>")}</div>
     </div>
     """, unsafe_allow_html=True)
 
     # ── Browser TTS Player ───────────────────────────────────────────────────
-    safe_summary = json.dumps(summary)
+    safe_summary = json.dumps(active_summary)
     tts_html     = _TTS_HTML.replace("SUMMARY_TEXT_PLACEHOLDER", safe_summary)
     components.html(tts_html, height=220, scrolling=False)
 
@@ -238,7 +331,7 @@ def render_summary_tab(study_output: dict | None) -> None:
     with b1:
         if st.button("📋 Copy", key="btn_copy_summary", use_container_width=True):
             st.components.v1.html(
-                f"<script>navigator.clipboard.writeText({json.dumps(summary)}).then(()=>{{console.log('copied');}});</script>",
+                f"<script>navigator.clipboard.writeText({json.dumps(active_summary)}).then(()=>{{console.log('copied');}});</script>",
                 height=0,
             )
             st.toast("✅ Summary copied!", icon="📋")
@@ -246,7 +339,7 @@ def render_summary_tab(study_output: dict | None) -> None:
     with b2:
         st.download_button(
             "⬇ Download",
-            data=summary,
+            data=active_summary,
             file_name="summary.txt",
             mime="text/plain",
             key="btn_dl_summary",
@@ -256,10 +349,12 @@ def render_summary_tab(study_output: dict | None) -> None:
     with b3:
         if st.button("🔄 Regenerate", key="btn_regen_summary", use_container_width=True):
             st.session_state.study_output = None
+            st.session_state.summary_cache = {}
+            st.session_state.summary_lang = "English"
             st.rerun()
 
     # ── Word count ────────────────────────────────────────────────────────────
-    word_count = len(summary.split())
+    word_count = len(active_summary.split())
     st.markdown(
         f'<div style="margin-top:6px;font-size:11px;color:var(--text-muted);">Summary: {word_count} words</div>',
         unsafe_allow_html=True,

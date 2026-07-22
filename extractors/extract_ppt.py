@@ -47,7 +47,8 @@ def extract_ppt(file: io.IOBase) -> tuple[str, int]:
             
             if slide_content:
                 slides_text.append(f"--- Slide {i+1} ---\n" + "\n\n".join(slide_content))
-
+            
+        st.session_state["page_texts"] = slides_text
         return "\n\n".join(slides_text), slide_count
 
     except Exception as exc:

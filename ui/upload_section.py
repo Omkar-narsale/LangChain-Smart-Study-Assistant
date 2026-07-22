@@ -9,6 +9,10 @@ v3:
   - Better file info grid layout
   - force_upload=False: hides upload when embedding_status == "ready"
   - force_upload=True:  always shows uploader (Settings page)
+
+v4 (architecture fix):
+  - Extracted _reset_document_state() to eliminate duplication
+  - Single source of truth for cache clearing
 """
 
 from __future__ import annotations
@@ -64,6 +68,34 @@ def _format_bytes(n: int) -> str:
     if n < 1024:       return f"{n} B"
     if n < 1024 ** 2:  return f"{n/1024:.1f} KB"
     return f"{n/1024**2:.2f} MB"
+
+
+def _reset_document_state() -> None:
+    """
+    Clear all cached document/RAG state when a new file is detected.
+
+    This is the SINGLE source of truth for cache invalidation.
+    Called from both file-upload and text-paste paths.
+    """
+    st.session_state.parent_docs        = None
+    st.session_state.doc_chunks         = None
+    st.session_state.doc_embeddings     = None
+    st.session_state.rag_vectorstore    = None
+    st.session_state.rag_bm25           = None
+    st.session_state.rag_retriever      = None
+    st.session_state.rag_chain          = None
+    st.session_state.embedding_status   = "none"
+    st.session_state.chat_history       = []
+    st.session_state.chat_cache         = {}
+    st.session_state.study_output       = None
+    st.session_state.chunk_count        = 0
+    st.session_state.processing_times   = {}
+    st.session_state.total_process_time = 0
+    st.session_state.quiz_submitted     = {}
+    st.session_state.quiz_revealed      = {}
+    st.session_state.quiz_answers       = {}
+    st.session_state.quiz_idx           = 0
+    logger.info("All document/RAG caches cleared for new file.")
 
 
 # ---------------------------------------------------------------------------
@@ -189,77 +221,105 @@ def render_upload_section(force_upload: bool = False) -> tuple[str, bool]:
             unsafe_allow_html=True,
         )
 
-    uploaded_file = st.file_uploader(
-        "Upload a document",
+    uploaded_files = st.file_uploader(
+        "Upload documents",
         type=["txt", "pdf", "docx", "ppt", "pptx", "png", "jpg", "jpeg"],
         label_visibility="collapsed",
+        accept_multiple_files=True,
         key="main_uploader" if not force_upload else "settings_uploader",
     )
 
-    if uploaded_file is not None:
+    if uploaded_files:
         from file_router import load_document
         from PyPDF2 import PdfReader
 
-        raw_bytes = uploaded_file.read()
-        uploaded_file.seek(0)
-        new_hash = compute_file_hash(raw_bytes)
+        all_texts = []
+        all_page_texts = []
+        total_words = 0
+        total_size = 0
+        total_pages = 0
+        total_slides = 0
+        file_names = []
+        has_pdf = False
+        has_ppt = False
 
-        # PDF page count
-        page_count: int | None = None
-        if uploaded_file.type == "application/pdf":
+        for uploaded_file in uploaded_files:
+            raw_bytes = uploaded_file.read()
+            uploaded_file.seek(0)
+            file_names.append(uploaded_file.name)
+            total_size += len(raw_bytes)
+
+            # PDF page count
+            page_count: int | None = None
+            if uploaded_file.type == "application/pdf":
+                has_pdf = True
+                try:
+                    uploaded_file.seek(0)
+                    reader     = PdfReader(uploaded_file)
+                    page_count = len(reader.pages)
+                    total_pages += page_count
+                    uploaded_file.seek(0)
+                except Exception:
+                    page_count = 0
+
+            # Extract text
             try:
-                uploaded_file.seek(0)
-                reader     = PdfReader(uploaded_file)
-                page_count = len(reader.pages)
-                uploaded_file.seek(0)
-            except Exception:
-                page_count = 0
+                document = load_document(uploaded_file)
+            except (ValueError, RuntimeError) as exc:
+                st.error(f"❌ Could not read the file {uploaded_file.name}: {exc}")
+                st.stop()
 
-        # Extract text
-        try:
-            document = load_document(uploaded_file)
-        except (ValueError, RuntimeError) as exc:
-            st.error(f"❌ Could not read the file: {exc}")
-            st.stop()
+            all_texts.append(f"--- Document: {uploaded_file.name} ---\n{document}")
+            
+            # Retrieve page texts from session state pop
+            file_pages = st.session_state.pop("page_texts", [document])
+            all_page_texts.extend(file_pages)
 
-        words    = len(document.split())
-        mins     = max(1, round(words / 250))
-        doc_type = _detect_doc_type(uploaded_file.type, uploaded_file.name)
-        language = _detect_language(document)
-        r_level  = _reading_level(words)
+            if uploaded_file.type in ["application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation"]:
+                has_ppt = True
+                slides = st.session_state.get("slide_count", 0)
+                if slides:
+                    total_slides += slides
 
-        st.session_state.document_text     = document
+        # Join everything
+        combined_document = "\n\n".join(all_texts)
+        words = len(combined_document.split())
+        mins = max(1, round(words / 250))
+        
+        display_name = ", ".join(file_names)
+        if len(file_names) > 3:
+            display_name = f"{len(file_names)} files ({file_names[0]}, {file_names[1]}...)"
+
+        # Store everything
+        st.session_state.document_text     = combined_document
+        st.session_state.page_texts        = all_page_texts
         st.session_state.word_count        = words
         st.session_state.reading_time      = mins
-        st.session_state.page_count        = page_count
-        # slide_count and ocr_status are already set by file_router
-        st.session_state.file_display_name = uploaded_file.name
-        st.session_state.file_size         = len(raw_bytes)
-        st.session_state.doc_language      = language
-        st.session_state.doc_type          = doc_type
-        st.session_state.reading_level     = r_level
+        st.session_state.page_count        = total_pages if has_pdf else None
+        st.session_state.slide_count       = total_slides if has_ppt else None
+        st.session_state.file_display_name = display_name
+        st.session_state.file_size         = total_size
+        st.session_state.doc_language      = _detect_language(combined_document)
+        st.session_state.doc_type          = "Multiple" if len(file_names) > 1 else _detect_doc_type(uploaded_files[0].type, uploaded_files[0].name)
+        st.session_state.reading_level     = _reading_level(words)
 
+        new_hash = compute_file_hash(combined_document.encode())
         if new_hash != st.session_state.get("file_hash", ""):
-            st.session_state.file_hash          = new_hash
-            st.session_state.parent_docs        = None
-            st.session_state.doc_chunks         = None
-            st.session_state.doc_embeddings     = None
-            st.session_state.rag_vectorstore    = None
-            st.session_state.rag_bm25           = None
-            st.session_state.rag_retriever      = None
-            st.session_state.rag_chain          = None
-            st.session_state.embedding_status   = "none"
-            st.session_state.chat_history       = []
-            st.session_state.study_output       = None
-            st.session_state.chunk_count        = 0
-            st.session_state.processing_times   = {}
-            st.session_state.total_process_time = 0
-            st.session_state.quiz_submitted      = {}
-            st.session_state.quiz_revealed       = {}
-            st.session_state.quiz_answers        = {}
-            st.session_state.quiz_idx            = 0
+            st.session_state.file_hash = new_hash
+            _reset_document_state()
+            # Restore state variables
+            st.session_state.document_text     = combined_document
+            st.session_state.page_texts        = all_page_texts
+            st.session_state.word_count        = words
+            st.session_state.reading_time      = mins
+            st.session_state.page_count        = total_pages if has_pdf else None
+            st.session_state.slide_count       = total_slides if has_ppt else None
+            st.session_state.file_display_name = display_name
+            st.session_state.file_size         = total_size
+            st.session_state.doc_language      = _detect_language(combined_document)
+            st.session_state.doc_type          = "Multiple" if len(file_names) > 1 else _detect_doc_type(uploaded_files[0].type, uploaded_files[0].name)
+            st.session_state.reading_level     = _reading_level(words)
             file_changed = True
-            logger.info("New file detected — all caches cleared.")
 
     else:
         # Fallback: paste raw text
@@ -294,24 +354,8 @@ def render_upload_section(force_upload: bool = False) -> tuple[str, bool]:
             st.session_state.reading_level     = r_level
 
             if new_hash != st.session_state.get("file_hash", ""):
-                st.session_state.file_hash          = new_hash
-                st.session_state.parent_docs        = None
-                st.session_state.doc_chunks         = None
-                st.session_state.doc_embeddings     = None
-                st.session_state.rag_vectorstore    = None
-                st.session_state.rag_bm25           = None
-                st.session_state.rag_retriever      = None
-                st.session_state.rag_chain          = None
-                st.session_state.embedding_status   = "none"
-                st.session_state.chat_history       = []
-                st.session_state.study_output       = None
-                st.session_state.chunk_count        = 0
-                st.session_state.processing_times   = {}
-                st.session_state.total_process_time = 0
-                st.session_state.quiz_submitted      = {}
-                st.session_state.quiz_revealed       = {}
-                st.session_state.quiz_answers        = {}
-                st.session_state.quiz_idx            = 0
+                st.session_state.file_hash = new_hash
+                _reset_document_state()
                 file_changed = True
 
     # Show file info card after upload (but before embedding is done)

@@ -6,8 +6,9 @@ Provides a single public function:
     get_embeddings() -> HuggingFaceEmbeddings
 
 Loads the sentence-transformers/all-MiniLM-L6-v2 model exactly ONCE
-and reuses it across all subsequent calls.  This follows the same
-singleton pattern used in config.py for the Gemma LLM.
+and reuses it across all subsequent calls.  Uses @st.cache_resource
+which is the canonical Streamlit mechanism for caching ML models —
+it survives reruns and page navigations.
 
 Model choice rationale:
     all-MiniLM-L6-v2 is a compact (22 M parameter) model that produces
@@ -24,9 +25,11 @@ Performance notes:
 from __future__ import annotations
 
 import logging
-from typing import Optional
+import time
 
 from langchain_huggingface import HuggingFaceEmbeddings
+
+import streamlit as st
 
 logger = logging.getLogger(__name__)
 
@@ -36,14 +39,10 @@ logger = logging.getLogger(__name__)
 
 _EMBEDDING_MODEL_ID: str = "sentence-transformers/all-MiniLM-L6-v2"
 
-import streamlit as st
 
 # ---------------------------------------------------------------------------
-# Singleton state — module-level, survives Streamlit reruns
+# Singleton via @st.cache_resource — the ONLY place this model is created
 # ---------------------------------------------------------------------------
-
-_embeddings_instance: Optional[HuggingFaceEmbeddings] = None
-
 
 @st.cache_resource
 def get_embeddings() -> HuggingFaceEmbeddings:
@@ -61,17 +60,19 @@ def get_embeddings() -> HuggingFaceEmbeddings:
         >>> embeddings = get_embeddings()
         >>> vector = embeddings.embed_query("What is machine learning?")
     """
-    global _embeddings_instance
+    t0 = time.time()
+    logger.info("Loading embedding model: %s", _EMBEDDING_MODEL_ID)
 
-    if _embeddings_instance is None:
-        logger.info("Loading embedding model: %s", _EMBEDDING_MODEL_ID)
-        _embeddings_instance = HuggingFaceEmbeddings(
-            model_name=_EMBEDDING_MODEL_ID,
-            model_kwargs={"device": "cpu"},
-            encode_kwargs={"normalize_embeddings": True},  # required for cosine sim
-        )
-        logger.info("Embedding model loaded successfully.")
-    else:
-        logger.info("Reusing cached embedding model instance.")
+    instance = HuggingFaceEmbeddings(
+        model_name=_EMBEDDING_MODEL_ID,
+        model_kwargs={"device": "cpu"},
+        encode_kwargs={"normalize_embeddings": True},  # required for cosine sim
+    )
 
-    return _embeddings_instance
+    elapsed = round(time.time() - t0, 2)
+    logger.info(
+        "Embedding model loaded successfully in %.2fs. "
+        "This should only appear ONCE per application lifecycle.",
+        elapsed,
+    )
+    return instance

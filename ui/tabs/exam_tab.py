@@ -174,10 +174,11 @@ def render_exam_tab(study_output: dict | None) -> None:
         )
         
     with col2:
-        st.markdown("<div style='font-size:13px;font-weight:700;color:var(--text-secondary);margin-bottom:8px;'>Section 2: Bloom Level</div>", unsafe_allow_html=True)
-        bloom = st.radio(
+        st.markdown("<div style='font-size:13px;font-weight:700;color:var(--text-secondary);margin-bottom:8px;'>Section 2: Bloom Levels</div>", unsafe_allow_html=True)
+        bloom_selected = st.multiselect(
             "Bloom Level",
             ["Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"],
+            default=["Remember", "Understand"],
             label_visibility="collapsed"
         )
         
@@ -194,16 +195,21 @@ def render_exam_tab(study_output: dict | None) -> None:
     
     # Generate Button
     if st.button("🚀 Generate Questions", type="primary", use_container_width=True):
+        if not bloom_selected:
+            st.warning("⚠️ Please select at least one Bloom level.")
+            st.stop()
+            
+        bloom_str = ", ".join(bloom_selected)
         summary = study_output.get("summary", "")
         # Convert key_points to string
         kp = study_output.get("key_points", [])
         kp_str = "\n".join(f"- {p}" for p in kp) if isinstance(kp, list) else str(kp)
         
-        cache_key = _get_cache_key(marks, bloom, count)
+        cache_key = _get_cache_key(marks, bloom_str, count)
         
         if cache_key not in st.session_state.exam_questions:
-            with st.spinner(f"Generating {count} {bloom} questions for {marks}..."):
-                questions = _generate_exam_questions(summary, kp_str, marks, bloom, count)
+            with st.spinner(f"Generating {count} questions across {bloom_str} for {marks}..."):
+                questions = _generate_exam_questions(summary, kp_str, marks, bloom_str, count)
                 if questions:
                     st.session_state.exam_questions[cache_key] = questions
                 else:

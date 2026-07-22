@@ -14,21 +14,21 @@ from langchain_core.runnables import RunnableLambda, RunnableSequence
 
 logger = logging.getLogger(__name__)
 
-def _clean_mermaid_output(raw_text: str) -> str:
+def _clean_mindmap_output(raw_text: str) -> str:
     """
-    Strips markdown formatting, JSON structures, and leading/trailing whitespace.
-    Ensures pure Mermaid.js code is returned.
+    Strips markdown formatting, code blocks, and leading/trailing whitespace.
+    Ensures clean Markdown outline is returned.
     """
     cleaned = raw_text.strip()
     
-    # Remove markdown code blocks (e.g. ```mermaid ... ``` or ``` ... ```)
+    # Remove markdown code blocks (e.g. ```markdown ... ``` or ``` ... ```)
     cleaned = re.sub(r"^```[a-zA-Z]*\n", "", cleaned, flags=re.MULTILINE)
     cleaned = re.sub(r"```$", "", cleaned, flags=re.MULTILINE)
     
-    # Sometimes the LLM includes explanatory text. We will just attempt to strip lines before 'mindmap' or 'graph TD'
-    match = re.search(r"(mindmap|graph TD).*$", cleaned, re.IGNORECASE | re.DOTALL)
+    # If there are any leading non-list lines, locate the first list item or heading
+    match = re.search(r"(^[ \t]*[-*+#].*)$", cleaned, re.MULTILINE)
     if match:
-        cleaned = match.group(0)
+        cleaned = cleaned[match.start():]
         
     return cleaned.strip()
 
@@ -49,16 +49,16 @@ def _generate_mindmap_code(summary_text: str, inference_mode: str) -> str:
     else:
         output_text = str(raw_response)
         
-    cleaned_code = _clean_mermaid_output(output_text)
+    cleaned_code = _clean_mindmap_output(output_text)
     
     if not cleaned_code:
-        raise ValueError("Failed to generate valid Mermaid code.")
+        raise ValueError("Failed to generate valid Mind Map outline.")
         
     return cleaned_code
 
 def generate_mindmap() -> str:
     """
-    Generates Mermaid code based on the cached summary.
+    Generates Markdown outline based on the cached summary.
     Throws an exception if the summary is not available.
     """
     study_output = st.session_state.get("study_output")
@@ -69,5 +69,6 @@ def generate_mindmap() -> str:
     inference_mode = st.session_state.get("inference_mode", "Local Gemma")
     
     cleaned_code = _generate_mindmap_code(summary_text, inference_mode)
-    st.session_state.mermaid_code = cleaned_code
+    st.session_state.mindmap_markdown = cleaned_code
     return cleaned_code
+

@@ -175,16 +175,16 @@ Rules:
 # ---------------------------------------------------------------------------
 mindmap_prompt = PromptTemplate.from_template(
     """<start_of_turn>user
-You are a Mermaid.js expert. Based ONLY on the following summary, generate a Mermaid.js diagram code that represents a Mind Map of the core concepts.
+You are a mind map generator. Based ONLY on the following summary, generate a structured Markdown outline of the core concepts.
 
 Rules:
-1. Output ONLY valid Mermaid syntax.
-2. Do NOT wrap the output in markdown backticks (e.g. ```mermaid).
-3. Do NOT include any explanations, JSON, or surrounding text.
-4. Prefer 'mindmap' syntax (e.g. 'mindmap\n  root((Concept))\n    Child1\n    Child2'). If not possible, use 'graph TD'.
-5. Create a clear hierarchy with parent-child relationships.
-6. Maximum 40 nodes.
-7. No duplicate nodes.
+1. Output ONLY a valid Markdown bulleted list structure (using hyphens and indentation).
+2. The root node must be the single main topic, as the first bullet (e.g. - Central Concept).
+3. Subtopics and details must be nested using indentation (2 spaces per level).
+4. Do NOT use markdown code blocks (e.g. ```markdown or ```).
+5. Do NOT include any explanations, JSON, or surrounding text.
+6. Keep node names concise (max 4-5 words per node).
+7. Create a clean, logical hierarchy.
 
 Summary:
 {summary}
@@ -192,6 +192,7 @@ Summary:
 <start_of_turn>model
 """
 )
+
 
 # ---------------------------------------------------------------------------
 # 9. Exam Generator Prompt (input: {summary}, {key_points}, {marks}, {bloom_level}, {count})

@@ -1,5 +1,5 @@
 """
-mindmap_renderer.py — Renders the interactive Mermaid Mind Map.
+mindmap_renderer.py — Renders the interactive Markdown-based Mind Map using Markmap.js.
 """
 
 from __future__ import annotations
@@ -9,155 +9,286 @@ import streamlit.components.v1 as components
 
 from mindmap_generator import generate_mindmap
 
-# HTML template for the Mermaid renderer.
-# This uses mermaid.min.js for rendering and svg-pan-zoom for interactivity.
-_MERMAID_HTML_TEMPLATE = """
+# HTML template for the Markmap renderer.
+_MARKMAP_HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
-    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Mind Map</title>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-view@0.16.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/markmap-lib@0.16.0"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body {{
+        * {
+            box-sizing: border-box;
+        }
+        body {
             margin: 0;
             padding: 0;
-            background-color: transparent;
+            background-color: #0F172A; /* Tailwind slate-900 */
             font-family: 'Inter', sans-serif;
             overflow: hidden;
             display: flex;
             flex-direction: column;
             height: 100vh;
             color: #F8FAFC;
-        }}
-        #toolbar {{
+        }
+        #toolbar {
             display: flex;
             gap: 10px;
-            padding: 10px;
-            background: rgba(255, 255, 255, 0.05);
+            padding: 12px 20px;
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(12px);
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            justify-content: center;
+            align-items: center;
+            justify-content: space-between;
             flex-wrap: wrap;
-        }}
-        button {{
-            background: rgba(99, 102, 241, 0.2);
-            border: 1px solid rgba(99, 102, 241, 0.4);
-            color: #C7D2FE;
+            z-index: 100;
+        }
+        .toolbar-group {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .search-container {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+        .search-input {
+            background: rgba(255, 255, 255, 0.07);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #F8FAFC;
             padding: 6px 12px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 12px;
-            font-weight: 600;
+            padding-right: 30px;
+            border-radius: 8px;
+            font-size: 13px;
+            outline: none;
             transition: all 0.2s;
-        }}
-        button:hover {{
-            background: rgba(99, 102, 241, 0.4);
-            color: #fff;
-        }}
-        #container {{
+            min-width: 200px;
+        }
+        .search-input:focus {
+            border-color: #6366F1;
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+            background: rgba(255, 255, 255, 0.1);
+        }
+        .search-clear {
+            position: absolute;
+            right: 8px;
+            cursor: pointer;
+            color: #94A3B8;
+            font-size: 14px;
+            display: none;
+            user-select: none;
+        }
+        button {
+            background: rgba(99, 102, 241, 0.15);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            color: #C7D2FE;
+            padding: 7px 14px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s;
+            user-select: none;
+        }
+        button:hover {
+            background: rgba(99, 102, 241, 0.3);
+            color: #FFFFFF;
+            border-color: rgba(99, 102, 241, 0.5);
+            transform: translateY(-1px);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        #container {
             flex: 1;
             position: relative;
             overflow: hidden;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }}
-        /* Target the mermaid svg */
-        svg {{
-            width: 100% !important;
-            height: 100% !important;
-            max-width: none !important;
-        }}
-        .error-msg {{
-            color: #ef4444;
-            padding: 20px;
-            background: rgba(239, 68, 68, 0.1);
-            border-radius: 8px;
-            margin: 20px;
-            text-align: center;
-        }}
-        pre {{
-            background: rgba(0,0,0,0.3);
-            padding: 15px;
-            border-radius: 8px;
-            overflow: auto;
-            text-align: left;
-            margin: 0 20px;
-        }}
+            width: 100%;
+            height: 100%;
+        }
+        svg#mindmap-svg {
+            width: 100%;
+            height: 100%;
+            background-color: #0F172A;
+        }
+        /* Custom Markmap node styling for dark mode premium aesthetic */
+        .markmap-node {
+            cursor: pointer;
+        }
+        .markmap-foreign-object {
+            padding: 4px 8px;
+            transition: background-color 0.3s, color 0.3s;
+            font-size: 13px;
+            color: #E2E8F0;
+        }
+        .markmap-foreign-object strong,
+        .markmap-foreign-object h1,
+        .markmap-foreign-object h2,
+        .markmap-foreign-object h3 {
+            color: #FFFFFF;
+            margin: 0;
+        }
+        .markmap-node-circle {
+            fill: #6366F1 !important;
+            stroke: #818CF8 !important;
+            stroke-width: 2px !important;
+            transition: r 0.2s, fill 0.2s;
+        }
+        .markmap-node:hover .markmap-node-circle {
+            r: 8px !important;
+            fill: #818CF8 !important;
+        }
+        .markmap-link {
+            fill: none;
+            stroke-width: 2.5px !important;
+            transition: stroke 0.3s;
+        }
+        /* Style nodes search highlight */
+        .highlighted {
+            background-color: rgba(234, 179, 8, 0.3) !important;
+            border: 1px solid #EAB308 !important;
+            border-radius: 6px !important;
+            color: #FFFFFF !important;
+            font-weight: 600;
+        }
     </style>
 </head>
 <body>
     <div id="toolbar">
-        <button id="btn-zoom-in">🔍 Zoom In</button>
-        <button id="btn-zoom-out">🔍 Zoom Out</button>
-        <button id="btn-fit">🎯 Fit to Screen</button>
-        <button id="btn-dl-svg">⬇ Download SVG</button>
-        <button id="btn-dl-png">⬇ Download PNG</button>
-        <button id="btn-copy">📋 Copy Code</button>
+        <div class="toolbar-group">
+            <div class="search-container">
+                <input type="text" id="search-input" class="search-input" placeholder="Search nodes...">
+                <span id="search-clear" class="search-clear">&times;</span>
+            </div>
+            <button id="btn-fit">🎯 Fit Screen</button>
+            <button id="btn-fullscreen">📺 Fullscreen</button>
+        </div>
+        <div class="toolbar-group">
+            <button id="btn-dl-svg">⬇ SVG</button>
+            <button id="btn-dl-png">⬇ PNG (High-Res)</button>
+        </div>
     </div>
     <div id="container">
-        <div class="mermaid" id="mermaid-graph">
-{mermaid_code}
-        </div>
+        <svg id="mindmap-svg"></svg>
     </div>
 
     <script>
-        const mermaidCode = `{mermaid_code_escaped}`;
-        let panZoomInstance = null;
-
-        mermaid.initialize({{ 
-            startOnLoad: true,
-            theme: 'dark',
-            securityLevel: 'loose',
-            fontFamily: 'Inter, sans-serif'
-        }});
-
-        // After mermaid renders, initialize pan/zoom
-        setTimeout(() => {{
-            const svgElement = document.querySelector('#mermaid-graph svg');
-            if (svgElement) {{
-                // Initialize pan/zoom
-                panZoomInstance = svgPanZoom(svgElement, {{
-                    zoomEnabled: true,
-                    controlIconsEnabled: false,
-                    fit: true,
-                    center: true,
-                    minZoom: 0.1,
-                    maxZoom: 10
-                }});
-            }} else {{
-                // Rendering failed, show fallback
-                document.getElementById('container').innerHTML = 
-                    '<div class="error-msg"><h3>Mermaid Rendering Failed</h3><p>Displaying source code fallback:</p></div>' + 
-                    '<pre>' + mermaidCode.replace(/</g, "&lt;").replace(/>/g, "&gt;") + '</pre>';
-            }}
-        }}, 500);
-
-        // Toolbar Actions
-        document.getElementById('btn-zoom-in').addEventListener('click', () => {{
-            if (panZoomInstance) panZoomInstance.zoomIn();
-        }});
+        const markdownCode = `{mindmap_markdown_escaped}`;
         
-        document.getElementById('btn-zoom-out').addEventListener('click', () => {{
-            if (panZoomInstance) panZoomInstance.zoomOut();
-        }});
-        
-        document.getElementById('btn-fit').addEventListener('click', () => {{
-            if (panZoomInstance) {{
-                panZoomInstance.fit();
-                panZoomInstance.center();
-            }}
-        }});
+        // Parse markdown outline using markmap-lib
+        const { Transformer } = window.markmap;
+        const transformer = new Transformer();
+        const { root: rootData } = transformer.transform(markdownCode);
 
-        document.getElementById('btn-copy').addEventListener('click', () => {{
-            navigator.clipboard.writeText(mermaidCode).then(() => {{
-                alert('Mermaid code copied to clipboard!');
-            }});
-        }});
+        // Render Markmap
+        const { Markmap } = window.markmap;
+        const mm = Markmap.create('#mindmap-svg', {
+            autoFit: true,
+            duration: 300,
+            style: (id) => `
+                .markmap-link { stroke: #334155; }
+            `
+        }, rootData);
 
-        document.getElementById('btn-dl-svg').addEventListener('click', () => {{
-            const svgElement = document.querySelector('#mermaid-graph svg');
-            if (!svgElement) return;
+        // Track fullscreen state
+        const btnFullscreen = document.getElementById('btn-fullscreen');
+        btnFullscreen.addEventListener('click', () => {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().then(() => {
+                    btnFullscreen.textContent = "Exit Fullscreen";
+                }).catch(err => {
+                    alert(`Error enabling fullscreen: ${err.message}`);
+                });
+            } else {
+                document.exitFullscreen().then(() => {
+                    btnFullscreen.textContent = "📺 Fullscreen";
+                });
+            }
+        });
+
+        // Auto-fit to screen
+        document.getElementById('btn-fit').addEventListener('click', () => {
+            mm.fit();
+        });
+
+        // Search nodes function
+        const searchInput = document.getElementById('search-input');
+        const searchClear = document.getElementById('search-clear');
+
+        function doSearch() {
+            const query = searchInput.value.trim().toLowerCase();
+            
+            // Toggle clear button
+            searchClear.style.display = query ? 'block' : 'none';
+
+            // Clear previous highlights
+            document.querySelectorAll('.markmap-foreign-object').forEach(el => {
+                el.classList.remove('highlighted');
+            });
+
+            if (!query) return;
+
+            let rootChanged = false;
+            
+            // Helper to recursively expand nodes that contain query (or have children containing query)
+            function expandToMatches(node) {
+                let matches = false;
+                if (node.content && node.content.toLowerCase().includes(query)) {
+                    matches = true;
+                }
+                let childMatch = false;
+                if (node.children) {
+                    node.children.forEach(c => {
+                        if (expandToMatches(c)) {
+                            childMatch = true;
+                        }
+                    });
+                }
+                if (matches || childMatch) {
+                    if (node.payload && node.payload.fold) {
+                        node.payload.fold = 0;
+                        rootChanged = true;
+                    }
+                    return true;
+                }
+                return false;
+            }
+
+            expandToMatches(rootData);
+
+            if (rootChanged) {
+                mm.setData(rootData);
+            }
+
+            // Highlight matches in the DOM
+            setTimeout(() => {
+                document.querySelectorAll('.markmap-foreign-object').forEach(el => {
+                    if (el.textContent.toLowerCase().includes(query)) {
+                        el.classList.add('highlighted');
+                    }
+                });
+            }, 60);
+        }
+
+        searchInput.addEventListener('input', doSearch);
+        searchClear.addEventListener('click', () => {
+            searchInput.value = '';
+            doSearch();
+            searchInput.focus();
+        });
+
+        // SVG Export
+        document.getElementById('btn-dl-svg').addEventListener('click', () => {
+            const svgElement = document.getElementById('mindmap-svg');
             const serializer = new XMLSerializer();
             let source = serializer.serializeToString(svgElement);
             source = '<?xml version="1.0" standalone="no"?>\\r\\n' + source;
@@ -169,46 +300,42 @@ _MERMAID_HTML_TEMPLATE = """
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-        }});
+        });
 
-        document.getElementById('btn-dl-png').addEventListener('click', () => {{
-            const svgElement = document.querySelector('#mermaid-graph svg');
+        // PNG High-Res Export
+        document.getElementById('btn-dl-png').addEventListener('click', () => {
+            const svgElement = document.getElementById('mindmap-svg');
             if (!svgElement) return;
-            
-            // Need to reset zoom before exporting to get crisp full image
-            const oldZoom = panZoomInstance ? panZoomInstance.getZoom() : 1;
-            const oldPan = panZoomInstance ? panZoomInstance.getPan() : {{x:0, y:0}};
-            
-            if (panZoomInstance) {{
-                panZoomInstance.fit();
-                panZoomInstance.center();
-            }}
 
-            const serializer = new XMLSerializer();
-            const source = serializer.serializeToString(svgElement);
-            const canvas = document.createElement("canvas");
-            const ctx = canvas.getContext("2d");
-            const img = new Image();
-            
-            img.onload = function() {{
-                canvas.width = img.width * 2; // High-res
-                canvas.height = img.height * 2;
-                ctx.scale(2, 2);
-                ctx.drawImage(img, 0, 0);
-                
-                const link = document.createElement("a");
-                link.download = "mindmap.png";
-                link.href = canvas.toDataURL("image/png");
-                link.click();
-                
-                // Restore old zoom
-                if (panZoomInstance) {{
-                    panZoomInstance.zoom(oldZoom);
-                    panZoomInstance.pan(oldPan);
-                }}
-            }};
-            img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(source)));
-        }});
+            mm.fit();
+
+            setTimeout(() => {
+                const serializer = new XMLSerializer();
+                const source = serializer.serializeToString(svgElement);
+                const canvas = document.createElement("canvas");
+                const ctx = canvas.getContext("2d");
+                const img = new Image();
+
+                img.onload = function() {
+                    const scale = 3; // High-res
+                    canvas.width = img.width * scale;
+                    canvas.height = img.height * scale;
+                    
+                    // Dark theme background
+                    ctx.fillStyle = '#0F172A';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    
+                    ctx.scale(scale, scale);
+                    ctx.drawImage(img, 0, 0);
+
+                    const link = document.createElement("a");
+                    link.download = "mindmap.png";
+                    link.href = canvas.toDataURL("image/png");
+                    link.click();
+                };
+                img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(source)));
+            }, 200);
+        });
     </script>
 </body>
 </html>
@@ -219,7 +346,7 @@ def render_mindmap_tab() -> None:
     st.markdown("<h2 class='text-section'>🗺 Mind Map</h2>", unsafe_allow_html=True)
     
     # ── Check if a mind map exists in session state ───────────────────────────
-    if not st.session_state.get("mermaid_code"):
+    if not st.session_state.get("mindmap_markdown"):
         st.info("No Mind Map Generated.")
         
         col1, col2, col3 = st.columns([1, 2, 1])
@@ -227,13 +354,12 @@ def render_mindmap_tab() -> None:
             generate_clicked = st.button("🗺 Generate Mind Map", type="primary", use_container_width=True)
             
         if generate_clicked:
-            # Enforce that study material is already generated.
             study_output = st.session_state.get("study_output")
             if not study_output or "summary" not in study_output:
                 st.warning("⚠️ Generate Study Material first.")
                 return
                 
-            with st.spinner("Generating Mind Map using Groq API..."):
+            with st.spinner("Generating Mind Map outline..."):
                 try:
                     generate_mindmap()
                     st.success("Mind Map generated successfully!")
@@ -243,26 +369,21 @@ def render_mindmap_tab() -> None:
         return
 
     # ── A mind map exists, render it ──────────────────────────────────────────
-    
-    # Header actions (Regenerate button)
     col1, col2, col3 = st.columns([3, 1, 1])
     with col3:
         if st.button("🔄 Regenerate", key="btn_regen_mindmap", use_container_width=True):
-            st.session_state.mermaid_code = None
-            st.session_state.mindmap_svg = None
+            st.session_state.mindmap_markdown = None
             st.rerun()
             
     # Inject the HTML interactive block
-    mermaid_code = st.session_state.mermaid_code
+    mindmap_markdown = st.session_state.mindmap_markdown
     # Escape backticks and backslashes for JS injection
-    mermaid_code_escaped = mermaid_code.replace("\\", "\\\\").replace("`", "\\`")
+    mindmap_markdown_escaped = mindmap_markdown.replace("\\", "\\\\").replace("`", "\\`").replace("\n", "\\n")
     
-    html_content = _MERMAID_HTML_TEMPLATE.format(
-        mermaid_code=mermaid_code,
-        mermaid_code_escaped=mermaid_code_escaped
+    html_content = _MARKMAP_HTML_TEMPLATE.replace(
+        "{mindmap_markdown_escaped}", mindmap_markdown_escaped
     )
     
-    # Render with a height of 750px (~75vh)
     st.markdown("<div class='glass-card' style='padding: 0;'>", unsafe_allow_html=True)
     components.html(html_content, height=750, scrolling=False)
     st.markdown("</div>", unsafe_allow_html=True)

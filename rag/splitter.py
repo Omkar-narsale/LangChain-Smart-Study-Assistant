@@ -39,18 +39,32 @@ def get_child_splitter() -> RecursiveCharacterTextSplitter:
         add_start_index=True,
     )
 
-def split_document(text: str) -> Tuple[list[Document], list[Document]]:
+def split_document(text_or_pages: str | list[str], filename: str = "Unknown Document") -> Tuple[list[Document], list[Document]]:
     """
     Splits text into Parent and Child chunks, manually linking them via metadata.
     Returns (parent_docs, child_docs).
     """
-    if not text or not text.strip():
-        raise ValueError("Cannot split an empty document.")
+    if isinstance(text_or_pages, str):
+        if not text_or_pages or not text_or_pages.strip():
+            raise ValueError("Cannot split an empty document.")
+        texts = [text_or_pages]
+        metadatas = [{"page": 1, "source": filename}]
+    elif isinstance(text_or_pages, list):
+        if not text_or_pages or not any(t.strip() for t in text_or_pages):
+            raise ValueError("Cannot split an empty document.")
+        texts = []
+        metadatas = []
+        for idx, page_text in enumerate(text_or_pages):
+            if page_text and page_text.strip():
+                texts.append(page_text)
+                metadatas.append({"page": idx + 1, "source": filename})
+    else:
+        raise ValueError("Invalid document text format.")
 
     parent_splitter = get_parent_splitter()
     child_splitter = get_child_splitter()
 
-    parent_docs = parent_splitter.create_documents([text])
+    parent_docs = parent_splitter.create_documents(texts, metadatas=metadatas)
     child_docs = []
 
     child_idx_global = 0

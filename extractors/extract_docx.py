@@ -40,6 +40,8 @@ def extract_docx(file: io.IOBase) -> str:
             if table_content:
                 content.append("Table Data:\n" + "\n".join(table_content))
 
+        import streamlit as st
+        st.session_state["page_texts"] = content
         return "\n\n".join(content)
 
     except Exception as exc:

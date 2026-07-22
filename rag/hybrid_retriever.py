@@ -19,10 +19,31 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 
+def distance_to_confidence(distance: float) -> int:
+    """
+    Convert FAISS L2/Euclidean distance to confidence percentage.
+    Mapping constraints:
+      0.02 -> 98%
+      0.08 -> 92%
+      0.15 -> 87%
+    """
+    if distance <= 0.02:
+        conf = 1.0 - distance
+    elif distance <= 0.08:
+        conf = 0.98 + (distance - 0.02) * (0.92 - 0.98) / (0.08 - 0.02)
+    elif distance <= 0.15:
+        conf = 0.92 + (distance - 0.08) * (0.87 - 0.92) / (0.15 - 0.08)
+    else:
+        import math
+        conf = 0.87 * math.exp(-1.5 * (distance - 0.15))
+    
+    return round(max(0.1, min(1.0, conf)) * 100)
+
+
 class AdvancedHybridRetriever(BaseRetriever):
     """
     A custom LangChain retriever that:
-    1. Queries FAISS (vector search) for child chunks.
+    1. Queries FAISS (vector search) for child chunks with scores.
     2. Queries BM25 (keyword search) for child chunks.
     3. Merges and ranks the results.
     4. Removes duplicate chunks.
@@ -38,10 +59,9 @@ class AdvancedHybridRetriever(BaseRetriever):
     ) -> List[Document]:
         
         # 1. Fetch child docs from both retrievers
-        # We query for slightly more chunks than k to allow for deduplication
         query_k = max(4, self.k * 2)
         
-        # Temporarily override k if possible (some retrievers allow search_kwargs)
+        # Temporarily override k if possible
         if hasattr(self.vector_retriever, "search_kwargs"):
             old_vk = self.vector_retriever.search_kwargs.get("k", self.k)
             self.vector_retriever.search_kwargs["k"] = query_k
@@ -50,8 +70,17 @@ class AdvancedHybridRetriever(BaseRetriever):
             old_bk = self.bm25_retriever.k
             self.bm25_retriever.k = query_k
 
+        vector_docs_with_scores = []
+        bm25_docs = []
+
         try:
-            vector_docs = self.vector_retriever.invoke(query)
+            # Query vector store directly if possible to get scores
+            if hasattr(self.vector_retriever, "vectorstore") and hasattr(self.vector_retriever.vectorstore, "similarity_search_with_score"):
+                vector_docs_with_scores = self.vector_retriever.vectorstore.similarity_search_with_score(query, k=query_k)
+            else:
+                vector_docs = self.vector_retriever.invoke(query)
+                vector_docs_with_scores = [(doc, 0.1) for doc in vector_docs]
+
             bm25_docs = self.bm25_retriever.invoke(query)
         finally:
             # Restore k
@@ -60,11 +89,18 @@ class AdvancedHybridRetriever(BaseRetriever):
             if hasattr(self.bm25_retriever, "k"):
                 self.bm25_retriever.k = old_bk
 
-        # 2. Merge & Deduplicate (Reciprocal Rank Fusion could be used, but simple interleaving works too)
+        # Assign confidence scores to vector retrieved docs
+        for doc, dist in vector_docs_with_scores:
+            doc.metadata["distance"] = dist
+            doc.metadata["confidence"] = distance_to_confidence(dist)
+            doc.metadata["retrieval_method"] = "Vector"
+
+        # 2. Merge & Deduplicate
         merged_children = []
         seen_child_ids = set()
         
-        # Simple interleave
+        vector_docs = [item[0] for item in vector_docs_with_scores]
+        
         for v_doc, b_doc in zip(vector_docs + [None]*len(bm25_docs), bm25_docs + [None]*len(vector_docs)):
             if v_doc:
                 c_id = v_doc.metadata.get("chunk")
@@ -74,6 +110,13 @@ class AdvancedHybridRetriever(BaseRetriever):
             if b_doc:
                 c_id = b_doc.metadata.get("chunk")
                 if c_id not in seen_child_ids:
+                    # If this keyword chunk was also retrieved by vector search, keep its scores.
+                    # Otherwise, assign fallback scores.
+                    if "confidence" not in b_doc.metadata:
+                        # Fallback: L2 distance 0.10 => 90% confidence
+                        b_doc.metadata["distance"] = 0.10
+                        b_doc.metadata["confidence"] = distance_to_confidence(0.10)
+                        b_doc.metadata["retrieval_method"] = "Keyword"
                     merged_children.append(b_doc)
                     seen_child_ids.add(c_id)
 
@@ -85,17 +128,29 @@ class AdvancedHybridRetriever(BaseRetriever):
             parent_id = child_doc.metadata.get("parent_id")
             if parent_id and parent_id not in seen_parent_ids:
                 if parent_id in self.parent_store:
-                    # Found parent doc
                     parent_doc = self.parent_store[parent_id]
-                    # Pass the child info for citations
-                    parent_doc.metadata["retrieved_via_child"] = child_doc.metadata.get("chunk")
-                    final_docs.append(parent_doc)
+                    
+                    # Create copy to avoid mutating cached store template
+                    import copy
+                    parent_doc_copy = copy.deepcopy(parent_doc)
+                    
+                    # Propagate child metadata
+                    parent_doc_copy.metadata["retrieved_via_child"] = child_doc.metadata.get("chunk")
+                    parent_doc_copy.metadata["chunk"] = child_doc.metadata.get("chunk")
+                    parent_doc_copy.metadata["page"] = child_doc.metadata.get("page", 1)
+                    parent_doc_copy.metadata["source"] = child_doc.metadata.get("source", "Unknown Document")
+                    parent_doc_copy.metadata["distance"] = child_doc.metadata.get("distance")
+                    parent_doc_copy.metadata["confidence"] = child_doc.metadata.get("confidence")
+                    parent_doc_copy.metadata["retrieval_method"] = child_doc.metadata.get("retrieval_method")
+                    parent_doc_copy.metadata["child_preview"] = child_doc.page_content.strip()
+                    
+                    final_docs.append(parent_doc_copy)
                     seen_parent_ids.add(parent_id)
             
             if len(final_docs) >= self.k:
                 break
                 
-        # Fallback if no parents (shouldn't happen with proper pipeline)
+        # Fallback if no parents
         if not final_docs:
             final_docs = merged_children[:self.k]
 

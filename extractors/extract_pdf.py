@@ -61,4 +61,5 @@ def extract_pdf(file: io.IOBase) -> str:
         else:
             pages.append(text.strip())
 
+    st.session_state["page_texts"] = pages
     return "\n\n".join(pages)

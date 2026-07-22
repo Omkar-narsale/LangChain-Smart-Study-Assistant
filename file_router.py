@@ -91,6 +91,9 @@ def load_document(uploaded_file) -> str:
         logger.exception("Failed to extract text from document.")
         raise RuntimeError(f"Text extraction failed: {exc}") from exc
 
+    if "page_texts" not in st.session_state or not st.session_state["page_texts"]:
+        st.session_state["page_texts"] = [text]
+
     extracted_length = len(text.strip())
     logger.info("Document loaded — %d characters extracted.", extracted_length)
 

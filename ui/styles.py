@@ -907,5 +907,525 @@ button[data-testid="baseButton-secondary"]:hover {{
 *::-webkit-scrollbar-thumb:hover {{
   background: var(--text-muted);
 }}
+
+/* ===========================================================
+   SECTION 22 — CHATGPT-STYLE CHAT PAGE
+   =========================================================== */
+
+/* Full-height chat layout */
+.gpt-chat-wrapper {{
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 160px);
+  max-height: calc(100vh - 160px);
+  position: relative;
+  overflow: hidden;
+}}
+
+/* Document header bar */
+.gpt-doc-header {{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  margin-bottom: 12px;
+  flex-shrink: 0;
+  animation: fadeInUp 0.3s var(--ease);
+}}
+.gpt-doc-header .doc-info {{
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}}
+.gpt-doc-header .doc-icon {{
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(124,92,255,0.15), rgba(0,194,255,0.1));
+  border: 1px solid var(--glass-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}}
+.gpt-doc-header .doc-name {{
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}}
+.gpt-doc-header .doc-meta {{
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}}
+.gpt-doc-header .status-pill {{
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 5px 14px;
+  border-radius: var(--radius-full);
+  background: rgba(34,197,94,0.08);
+  color: #22C55E;
+  border: 1px solid rgba(34,197,94,0.25);
+}}
+.gpt-doc-header .status-pill .status-dot {{
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22C55E;
+  animation: statusPulse 2s ease-in-out infinite;
+}}
+
+/* Scrollable conversation area */
+.gpt-messages {{
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 4px 16px 4px;
+  scroll-behavior: smooth;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}}
+
+/* Individual message wrapper */
+.gpt-msg {{
+  display: flex;
+  gap: 14px;
+  padding: 16px 12px;
+  border-radius: var(--radius-lg);
+  animation: chatFadeIn 0.35s var(--ease) both;
+  position: relative;
+  transition: background 0.2s ease;
+}}
+.gpt-msg:hover {{
+  background: rgba(255,255,255,0.02);
+}}
+.gpt-msg.user-msg {{
+  flex-direction: row-reverse;
+}}
+
+/* Avatars */
+.gpt-avatar {{
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}}
+.gpt-avatar.ai {{
+  background: linear-gradient(135deg, var(--primary), var(--accent));
+  box-shadow: 0 3px 12px rgba(124,92,255,0.3);
+}}
+.gpt-avatar.user {{
+  background: var(--user-bubble);
+  border: 1px solid rgba(124,92,255,0.25);
+}}
+
+/* Message content */
+.gpt-bubble {{
+  max-width: 72%;
+  min-width: 60px;
+}}
+.gpt-bubble.user-bubble {{
+  text-align: right;
+}}
+.gpt-bubble .bubble-content {{
+  padding: 12px 18px;
+  border-radius: 18px;
+  font-size: 14.5px;
+  line-height: 1.7;
+  word-break: break-word;
+}}
+.gpt-bubble.ai-bubble .bubble-content {{
+  background: var(--ai-bubble);
+  border: 1px solid var(--glass-border);
+  border-radius: 4px 18px 18px 18px;
+  color: var(--text-primary);
+  backdrop-filter: blur(10px);
+}}
+.gpt-bubble.user-bubble .bubble-content {{
+  background: linear-gradient(135deg, rgba(124,92,255,0.22), rgba(124,92,255,0.12));
+  border: 1px solid rgba(124,92,255,0.28);
+  border-radius: 18px 4px 18px 18px;
+  color: var(--text-primary);
+}}
+.gpt-bubble .bubble-time {{
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  font-weight: 500;
+}}
+.gpt-bubble.user-bubble .bubble-time {{
+  text-align: right;
+}}
+
+/* Message action buttons (hover) */
+.gpt-msg-actions {{
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 6px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}}
+.gpt-msg:hover .gpt-msg-actions {{
+  opacity: 1;
+}}
+.gpt-msg-actions .action-btn {{
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-sans);
+}}
+.gpt-msg-actions .action-btn:hover {{
+  background: rgba(124,92,255,0.1);
+  border-color: rgba(124,92,255,0.25);
+  color: var(--text-primary);
+}}
+
+/* Source reference pills */
+.gpt-sources {{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+}}
+.gpt-sources .source-label {{
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  width: 100%;
+  margin-bottom: 2px;
+}}
+.gpt-source-pill {{
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  font-size: 11.5px;
+  font-weight: 600;
+  background: rgba(124,92,255,0.08);
+  color: var(--primary-hover);
+  border: 1px solid rgba(124,92,255,0.2);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}}
+.gpt-source-pill:hover {{
+  background: rgba(124,92,255,0.15);
+  border-color: rgba(124,92,255,0.35);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(124,92,255,0.2);
+}}
+
+/* Typing / thinking indicator */
+.gpt-thinking {{
+  display: flex;
+  gap: 14px;
+  padding: 16px 12px;
+  animation: chatFadeIn 0.3s ease;
+}}
+.gpt-thinking-bubble {{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px;
+  background: var(--ai-bubble);
+  border: 1px solid var(--glass-border);
+  border-radius: 4px 18px 18px 18px;
+  backdrop-filter: blur(10px);
+}}
+.gpt-thinking-text {{
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}}
+.gpt-thinking-dots {{
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}}
+
+/* Suggested questions grid */
+.gpt-suggestions {{
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  max-width: 640px;
+  margin: 0 auto;
+}}
+
+/* Empty state */
+.gpt-empty {{
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+  padding: 40px;
+}}
+.gpt-empty-icon {{
+  font-size: 48px;
+  opacity: 0.8;
+  animation: fadeInScale 0.4s ease;
+}}
+.gpt-empty-title {{
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: var(--font-display);
+}}
+.gpt-empty-sub {{
+  font-size: 14px;
+  color: var(--text-secondary);
+  max-width: 400px;
+  line-height: 1.6;
+}}
+
+/* Bottom input bar */
+.gpt-input-bar {{
+  flex-shrink: 0;
+  padding: 12px 0 4px 0;
+  border-top: 1px solid var(--border-soft);
+}}
+.gpt-input-container {{
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  padding: 4px 4px 4px 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}}
+.gpt-input-container:focus-within {{
+  border-color: rgba(124,92,255,0.4);
+  box-shadow: 0 0 0 3px rgba(124,92,255,0.1);
+}}
+
+/* Override Streamlit text_input inside our container */
+.gpt-input-container [data-testid="stTextInput"] {{
+  flex: 1;
+}}
+.gpt-input-container [data-testid="stTextInput"] input {{
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 10px 0 !important;
+  font-size: 14.5px !important;
+  color: var(--text-primary) !important;
+}}
+.gpt-input-container [data-testid="stTextInput"] input:focus {{
+  box-shadow: none !important;
+  border: none !important;
+}}
+.gpt-input-container [data-testid="stTextInput"] label {{
+  display: none !important;
+}}
+.gpt-input-container [data-testid="stTextInput"] > div {{
+  padding: 0 !important;
+}}
+.gpt-input-container [data-testid="stTextInput"] > div > div {{
+  padding: 0 !important;
+}}
+
+/* Mic button */
+.gpt-mic-btn {{
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(124,92,255,0.08);
+  border: 1px solid rgba(124,92,255,0.2);
+  color: var(--text-secondary);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}}
+.gpt-mic-btn:hover {{
+  background: rgba(124,92,255,0.15);
+  color: var(--text-primary);
+}}
+.gpt-mic-btn.listening {{
+  background: rgba(239,68,68,0.12);
+  border-color: rgba(239,68,68,0.3);
+  color: #F87171;
+  animation: statusPulse 1s ease-in-out infinite;
+}}
+
+/* Send button */
+.gpt-send-btn {{
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+  border: none;
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  box-shadow: 0 3px 12px rgba(124,92,255,0.3);
+}}
+.gpt-send-btn:hover {{
+  transform: translateY(-1px);
+  box-shadow: 0 5px 18px rgba(124,92,255,0.45);
+}}
+.gpt-send-btn:disabled {{
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}}
+
+/* Override Streamlit button inside input bar */
+.gpt-input-actions .stButton > button {{
+  padding: 0 !important;
+  width: 40px !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  border-radius: 12px !important;
+  background: linear-gradient(135deg, var(--primary), var(--primary-hover)) !important;
+  border: none !important;
+  color: #fff !important;
+  font-size: 16px !important;
+  box-shadow: 0 3px 12px rgba(124,92,255,0.3) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}}
+.gpt-input-actions .stButton > button:hover {{
+  transform: translateY(-1px) !important;
+  box-shadow: 0 5px 18px rgba(124,92,255,0.45) !important;
+}}
+.gpt-input-actions .stButton > button:disabled {{
+  opacity: 0.4 !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+  box-shadow: none !important;
+  background: var(--text-muted) !important;
+}}
+
+/* Markdown inside AI bubbles */
+.gpt-ai-markdown p {{
+  margin: 0 0 8px 0 !important;
+  line-height: 1.7 !important;
+  color: var(--text-primary) !important;
+}}
+.gpt-ai-markdown p:last-child {{
+  margin-bottom: 0 !important;
+}}
+.gpt-ai-markdown ul, .gpt-ai-markdown ol {{
+  margin: 4px 0 8px 0 !important;
+  padding-left: 20px !important;
+}}
+.gpt-ai-markdown li {{
+  margin-bottom: 4px !important;
+  line-height: 1.6 !important;
+}}
+.gpt-ai-markdown code {{
+  background: rgba(124,92,255,0.1) !important;
+  padding: 2px 6px !important;
+  border-radius: 4px !important;
+  font-size: 13px !important;
+  color: var(--primary-hover) !important;
+}}
+.gpt-ai-markdown pre {{
+  background: rgba(0,0,0,0.3) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-md) !important;
+  padding: 14px !important;
+  overflow-x: auto !important;
+  margin: 8px 0 !important;
+}}
+.gpt-ai-markdown pre code {{
+  background: none !important;
+  padding: 0 !important;
+  color: var(--text-primary) !important;
+  font-size: 13px !important;
+}}
+.gpt-ai-markdown table {{
+  border-collapse: collapse !important;
+  width: 100% !important;
+  margin: 8px 0 !important;
+  font-size: 13px !important;
+}}
+.gpt-ai-markdown th, .gpt-ai-markdown td {{
+  border: 1px solid var(--border) !important;
+  padding: 8px 12px !important;
+  text-align: left !important;
+}}
+.gpt-ai-markdown th {{
+  background: rgba(124,92,255,0.08) !important;
+  font-weight: 600 !important;
+}}
+.gpt-ai-markdown blockquote {{
+  border-left: 3px solid var(--primary) !important;
+  padding-left: 14px !important;
+  margin: 8px 0 !important;
+  color: var(--text-secondary) !important;
+}}
+
+/* Listening overlay */
+@keyframes gptListenPulse {{
+  0%, 100% {{ box-shadow: 0 0 0 0 rgba(239,68,68,0.3); }}
+  50%       {{ box-shadow: 0 0 0 10px rgba(239,68,68,0); }}
+}}
+.gpt-listening-indicator {{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #F87171;
+  padding: 4px 0;
+  animation: fadeInUp 0.2s ease;
+}}
+.gpt-listening-indicator .listen-dot {{
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #EF4444;
+  animation: gptListenPulse 1.5s ease-in-out infinite;
+}}
+
 </style>
 """

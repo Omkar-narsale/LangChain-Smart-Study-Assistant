@@ -28,15 +28,19 @@ from langchain_core.prompts import PromptTemplate
 # ---------------------------------------------------------------------------
 
 RAG_PROMPT: PromptTemplate = PromptTemplate.from_template(
-    """You are a helpful study assistant.
-Answer ONLY using the supplied context.
-If the answer is unavailable inside the document, respond that the information is not present in the provided material.
+    """You are an intelligent study assistant.
+
+Answer ONLY using the retrieved context.
+
+If the answer is not available in the provided context, clearly say:
+
+"I couldn't find this information in the uploaded document."
+
+Never hallucinate.
 
 Context:
 {context}
 
 Question:
-{question}
-
-Answer:"""
+{question}"""
 )
