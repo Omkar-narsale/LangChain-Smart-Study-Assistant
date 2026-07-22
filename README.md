@@ -1,173 +1,195 @@
-# 📚 Smart Study Assistant
+# 📚 Smart Study Assistant Pro
 
-An AI-powered document analysis application built using **LangChain**, **RunnableParallel**, **TinyLlama**, and **Streamlit**.
+> 🚀 An AI-powered study companion that transforms PDFs, DOCX, and TXT files into interactive learning experiences using **Retrieval-Augmented Generation (RAG)**, **Groq LLM**, **LangChain**, and **FAISS**.
 
-The application accepts a document or pasted text and simultaneously generates:
-
-- 📄 Summary
-- 📌 Key Points
-- 📝 Quiz Questions
-- 🧠 Flashcards
-
-using **Parallel Chains** in LangChain.
+![Python](https://img.shields.io/badge/Python-3.11+-blue?style=for-the-badge&logo=python)
+![Streamlit](https://img.shields.io/badge/Streamlit-App-red?style=for-the-badge&logo=streamlit)
+![LangChain](https://img.shields.io/badge/LangChain-RAG-green?style=for-the-badge)
+![FAISS](https://img.shields.io/badge/FAISS-Vector%20Database-purple?style=for-the-badge)
+![Groq](https://img.shields.io/badge/Groq-LLM-orange?style=for-the-badge)
 
 ---
 
-## 🚀 Features
+## 🌟 Features
 
-- Upload documents
-  - ✅ TXT
-  - ✅ PDF
-  - ✅ DOCX
-- Paste custom text
-- AI-generated Summary
-- AI-generated Key Points
-- AI-generated Quiz
-- AI-generated Flashcards
-- Download Study Report
-- Parallel execution using LangChain RunnableParallel
+### 📄 Smart Document Processing
+- 📂 Upload PDF, DOCX, and TXT files
+- ✂ Intelligent text chunking
+- 🧠 Semantic embeddings
+- ⚡ Fast FAISS vector search
+- 🔍 Retrieval-Augmented Generation (RAG)
 
----
+### 🤖 AI Study Assistant
+- 💬 Ask questions from your documents
+- 📚 Source citations with page references
+- 🎯 Confidence score for retrieved content
+- 📄 Context-aware responses
+- 🚫 Reduced hallucinations using RAG
 
-## 🛠 Tech Stack
+### 📖 Study Tools
+- 📝 AI Summary
+- 🔑 Key Points
+- 🎴 Flashcards
+- ❓ Quiz Generator
+- 🧠 Mind Map Generator
+- 📊 AI Presentation Generator
 
-- Python
-- LangChain
-- TinyLlama-1.1B-Chat
-- HuggingFace
-- Streamlit
-- RunnableParallel
-- PromptTemplate
-- StrOutputParser
-- PyPDF2
-- python-docx
-
----
-
-## 📂 Project Structure
-
-```
-Smart_Study_Assistant/
-│
-├── app.py                  # Streamlit application
-├── chains.py               # LangChain Parallel Chain
-├── requirements.txt
-├── README.md
-│
-└── assets/
-    ├── flow.png
-    ├── study1.png
-    ├── study2.png
-    └── study3.png
-```
+### 🌍 Multilingual Support
+- 🇺🇸 English
+- 🇮🇳 Hindi
+- 🇮🇳 Marathi
 
 ---
 
-## ⚙️ Workflow
+# 🏗️ System Architecture
 
-```
-Document
-      │
-      ▼
-RunnableParallel
-      │
- ├───────────────┐
- │               │
- ▼               ▼
-Summary      Key Points
-
- ▼               ▼
-Quiz        Flashcards
-      │
-      ▼
- Merge Output
-      │
-      ▼
- Streamlit UI
+```text
+                    User Uploads Document
+                            │
+                            ▼
+                 PDF / DOCX / TXT Loader
+                            │
+                            ▼
+                 LangChain Document Objects
+                            │
+                            ▼
+          RecursiveCharacterTextSplitter
+                            │
+                            ▼
+                     Document Chunks
+                            │
+                            ▼
+     HuggingFace Embeddings (MiniLM-L6-v2)
+                            │
+                            ▼
+                 FAISS Vector Database
+                            │
+        ┌───────────────────┴───────────────────┐
+        ▼                                       ▼
+  Similarity Search                        Metadata
+(Page, Source, Chunk)                  (Page Numbers)
+        │
+        ▼
+      Retriever
+        │
+        ▼
+ Prompt + Retrieved Context
+        │
+        ▼
+      Groq LLM
+        │
+        ▼
+ Summary │ Quiz │ Flashcards │ AI Chat │ Mind Map
 ```
 
 ---
 
-## 🧩 LangChain Graph
+# 🧠 How RAG Works
 
-> Generated using `chain.get_graph().print_ascii()`
-
-<img width="658" height="434" alt="flow" src="https://github.com/user-attachments/assets/8104fb82-ca18-4a40-8b3a-35b0dd5d0df5" />
-
-
----
-
-## 📸 Application Preview
-
-### Home Page
-
-<img width="895" height="480" alt="study1" src="https://github.com/user-attachments/assets/8c83b077-7594-4849-8045-6e2af28c880b" />
-
-
----
-
-### Summary
-
-<img width="950" height="498" alt="study2" src="https://github.com/user-attachments/assets/f6926d54-92ff-4992-8f69-640461c6df4c" />
-
-
----
-
-### Key Points
-
-<img width="937" height="471" alt="study3" src="https://github.com/user-attachments/assets/42cb3c07-5e9d-4b8d-9f18-ce4761a789dc" />
-
-
----
-
-## 🧠 Parallel Chain Architecture
-
-Each task runs independently using **RunnableParallel**.
-
-```
-Input Document
-      │
-      ▼
-RunnableParallel
-│      │      │      │
-▼      ▼      ▼      ▼
-Summary
-Key Points
-Quiz
-Flashcards
-      │
-      ▼
-Merged Output
+```text
+User Uploads PDF
+        │
+        ▼
+Document Loader
+        │
+        ▼
+Text Splitter
+        │
+        ▼
+Chunks
+        │
+        ▼
+Embeddings
+        │
+        ▼
+FAISS Vector Store
+───────────────────────────────────────────
+User asks Question
+        │
+        ▼
+Question Embedding
+        │
+        ▼
+Similarity Search
+        │
+        ▼
+Top Relevant Chunks
+        │
+        ▼
+Prompt Construction
+        │
+        ▼
+Groq LLM
+        │
+        ▼
+Answer + Citations + Confidence Score
 ```
 
 ---
 
-## ▶️ Installation
+# ⚙️ Tech Stack
+
+| Category | Technology |
+|-----------|------------|
+| Frontend | Streamlit |
+| Backend | Python |
+| LLM | Groq |
+| Framework | LangChain |
+| Embeddings | sentence-transformers/all-MiniLM-L6-v2 |
+| Vector Database | FAISS |
+| Document Loader | PyPDFLoader, Docx2txtLoader, TextLoader |
+| Text Splitter | RecursiveCharacterTextSplitter |
+| Presentation | python-pptx |
+| Visualization | Plotly |
+
+---
+
+# 📚 Ask PDF with Citations
+
+Unlike traditional chatbots, Smart Study Assistant Pro answers questions **only from the uploaded document**.
+
+### Example
+
+```text
+🤖 Answer
+
+Large Language Models predict the next token...
+
+────────────────────────────
+
+📚 Sources
+
+✓ Page 5 (96%)
+
+✓ Page 7 (92%)
+
+✓ Page 9 (88%)
+
+────────────────────────────
+
+📊 Retrieval Statistics
+
+Retrieved Chunks : 4
+
+Average Confidence : 92%
+
+Response Time : 1.1 sec
+```
+
+---
+
+# 🚀 Installation
 
 Clone the repository
 
 ```bash
-git clone https://github.com/yourusername/Smart-Study-Assistant.git
+git clone https://github.com/Omkar-narsale/Smart-Study-Assistant-Pro.git
 ```
 
-Move inside the project
+Move into the project
 
 ```bash
-cd Smart-Study-Assistant
-```
-
-Create virtual environment
-
-```bash
-python -m venv venv
-```
-
-Activate environment
-
-Windows
-
-```bash
-venv\Scripts\activate
+cd Smart-Study-Assistant-Pro
 ```
 
 Install dependencies
@@ -176,7 +198,13 @@ Install dependencies
 pip install -r requirements.txt
 ```
 
-Run Streamlit
+Create a `.env` file
+
+```env
+GROQ_API_KEY=your_groq_api_key
+```
+
+Run the application
 
 ```bash
 streamlit run app.py
@@ -184,53 +212,82 @@ streamlit run app.py
 
 ---
 
-## 📦 Requirements
+# 📂 Project Structure
 
-- Python 3.11+
-- Streamlit
-- LangChain
-- LangChain-HuggingFace
-- Transformers
-- Torch
-- PyPDF2
-- python-docx
-
----
-
-## 📖 Concepts Used
-
-- PromptTemplate
-- RunnableParallel
-- RunnableLambda
-- Chat Models
-- StrOutputParser
-- Sequential Workflow
-- Parallel Execution
-- HuggingFacePipeline
-- Streamlit
+```text
+Smart-Study-Assistant-Pro
+│
+├── app.py
+├── requirements.txt
+├── .env
+├── assets/
+├── uploads/
+├── vector_store/
+├── embeddings/
+├── pages/
+├── utils/
+├── generated/
+└── README.md
+```
 
 ---
 
-## 🎯 Future Improvements
+# 🎯 Core Features
 
-- Support larger documents using Text Splitters
-- Retrieval-Augmented Generation (RAG)
-- Vector Database Integration
-- Conversation Memory
-- PDF Export
-- MCQ Answer Evaluation
-- Multiple LLM Support (Gemma, Mistral, Llama)
+- ✅ Upload PDF, DOCX & TXT
+- ✅ Semantic Search
+- ✅ Retrieval-Augmented Generation (RAG)
+- ✅ AI Chat
+- ✅ AI Summary
+- ✅ Flashcards
+- ✅ Quiz Generator
+- ✅ Mind Map
+- ✅ AI Presentation Generator
+- ✅ Source Citations
+- ✅ Confidence Scores
+- ✅ Cached Embeddings
+- ✅ Fast Retrieval
+
+
+
+# 🛣️ Future Improvements
+
+- [ ] OCR Support
+- [ ] Voice Assistant
+- [ ] Multi-PDF Chat
+- [ ] AI Notes Generator
+- [ ] Image Understanding
+- [ ] YouTube Summarizer
+- [ ] Authentication
+- [ ] Cloud Deployment
 
 ---
 
-## 👨‍💻 Author
+# 🤝 Contributing
+
+Contributions are welcome!
+
+1. Fork this repository
+2. Create a new branch
+3. Commit your changes
+4. Push to your fork
+5. Open a Pull Request
+
+---
+
+# 👨‍💻 Author
 
 **Omkar Narsale**
 
-GitHub: https://github.com/Omkar-narsale
-
-LinkedIn: www.linkedin.com/in/omkar-narsale45
+- 💻 GitHub: https://github.com/Omkar-narsale
+- 💼 LinkedIn:www.linkedin.com/in/omkar-narsale45
 
 ---
 
-⭐ If you found this project useful, consider giving it a Star!
+# ⭐ Support
+
+If you found this project useful, consider giving it a **⭐ Star** on GitHub!
+
+---
+
+## Made with ❤️ using Python, Streamlit, LangChain, FAISS & Groq
